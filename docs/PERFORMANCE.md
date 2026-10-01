@@ -15,7 +15,7 @@ Architecture context is in [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md).
 
 | Check | Result |
 |---|---|
-| Full `dbt build` (12 models, 2 seeds, 36 tests) | **36 s** wall clock, all 49 nodes pass. It was 41 s before the fix below. |
+| Full `dbt build` (11 models, 2 seeds, 36 tests at the time) | **36 s** wall clock, all 49 nodes pass. It was 41 s before the fix below. |
 | Data volume | 3.89 M rows each in `int_stock_prices_daily` and `fct_stock_history`. 1,495 rows in the trading PnL models. |
 | Bottleneck found | `fct_stock_history` took about 10 s **on every warehouse size**. The cause was an `ASOF JOIN` with no `ON` key, which Snowflake can't run in parallel. |
 | Fix | Look up FX rates per trading day, then use an ordinary equality join. The output is identical (0 rows differ), and the model is **2.8× faster** on XSMALL (9.6 s → 3.4 s). |
@@ -81,7 +81,7 @@ asof join fx_eur match_condition (prices.trade_date >= fx_eur.rate_date)
 
 An `ASOF JOIN` with no `ON` clause treats all rows as one partition. Snowflake can't split that across the warehouse's nodes, so one node did all the work regardless of warehouse size.
 
-**The fix.** The FX rate depends only on the date, so the `ASOF` lookup now runs over the **distinct trading days** (about 380) instead of every price row. The price rows then join to that small daily table with a plain equality join, which runs in parallel:
+**The fix.** The FX rate depends only on the date, so the `ASOF` lookup now runs over the **distinct trading days** (374) instead of every price row. The price rows then join to that small daily table with a plain equality join, which runs in parallel:
 
 ```sql
 trading_days as (select distinct trade_date from prices),

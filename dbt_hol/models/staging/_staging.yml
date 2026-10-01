@@ -3,6 +3,11 @@ version: 2
 models:
   - name: stg_public_data__stock_prices
     description: Stock price variables since var('start_date'), renamed. Still long format.
+    data_tests:
+      # the MAX() pivot downstream would silently hide duplicated source rows
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date, variable]
     columns:
       - name: ticker
         data_tests: [not_null]
