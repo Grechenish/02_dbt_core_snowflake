@@ -20,12 +20,12 @@
 
 ## Prerequisites
 
-1. Snowflake Trial (valid for 30 days). You can start from a [Free Trial](https://signup.snowflake.com/)
-3. Installed Financial & Economic Essentials [database](https://app.snowflake.com/marketplace/listing/GZTSZAS2KF7/cybersyn-inc-financial-economic-essentials?available=installed)
+1. Snowflake Trial (valid for 30 days). You can start from a [Free Trial](https://signup.snowflake.com/). When the trial ends the account is suspended and the scheduled pipeline stops, so add a payment method before then to keep it running.
+3. Installed Snowflake Public Data (Free) [database](https://app.snowflake.com/marketplace/listing/GZTSZ290BV255/snowflake-public-data-products-snowflake-public-data-free) (formerly Cybersyn "Financial & Economic Essentials"; the Knoema Economy Data Atlas used in the Snowflake tutorial is no longer available)
 2. Knowledge of basic IDE (i.e. VSCode) + knowing how to set up virtual envoronments
 3. Knowledge of [dbt fundamentals](https://courses.getdbt.com/courses/fundamentals)
 4. VSCode
-5. Python v 3.11 or less 
+5. Python 3.11 or newer (this project runs on 3.14, which dbt-core 1.12 supports)
 5. Registered github account
 6. Docker fundamentals [knowledge](https://www.youtube.com/watch?v=pg19Z8LL06w&t=1282)
 
@@ -35,7 +35,7 @@
 2. Setup virtual environment
 3. Install dbt
 4. Initiate integration between dbt & snowflake
-5. Validate perfromance
+5. Validate perfromance (see [docs/PERFORMANCE.md](docs/PERFORMANCE.md))
 
 ## Materials:
 - [Snowflake Trial](link)
