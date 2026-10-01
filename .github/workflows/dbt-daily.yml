@@ -1,0 +1,42 @@
+name: dbt daily build
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # every day at 07:00 UTC
+  workflow_dispatch:        # allow manual runs from the Actions tab
+
+concurrency:
+  group: dbt-prod
+  cancel-in-progress: false
+
+jobs:
+  dbt-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t dbt-hol .
+
+      - name: Run dbt build (prod)
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        run: |
+          mkdir -p artifacts && chmod 777 artifacts   # container runs as non-root user
+          docker run --rm \
+            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
+            -v "$PWD/artifacts:/app/dbt_hol/target" \
+            dbt-hol build --target prod
+
+      - name: Upload run results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-run-results
+          path: |
+            artifacts/run_results.json
+            artifacts/manifest.json
+          if-no-files-found: ignore
