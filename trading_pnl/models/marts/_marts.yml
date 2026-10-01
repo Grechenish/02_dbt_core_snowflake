@@ -5,7 +5,8 @@ models:
     description: >
       Daily history of US-listed securities from Nasdaq trading data (one row per ticker per trading
       day) with close prices in USD and in each currency listed in var('report_currencies').
-      Each day takes the latest FX rate published on or before it.
+      Each day takes the latest FX rate published on or before it. Incremental (merge on
+      ticker + trade_date) with the same lookback window as int_stock_prices_daily.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -30,8 +31,6 @@ models:
       - name: close_price_usd
         description: "{{ doc('col_close_price_usd') }}"
         data_tests: [not_null]
-      - name: close_price_adjusted_usd
-        description: Close price in USD adjusted for splits and dividends.
       - name: volume
         description: "{{ doc('col_volume') }}"
       # one rate/price column pair per currency in var('report_currencies'); update these when it changes
@@ -48,20 +47,15 @@ models:
 
   - name: fct_trading_pnl
     description: >
-      Daily PnL per book / trader / instrument in the book currency. Incremental (merge): each run
-      re-merges the last var('pnl_lookback_days') days. Editing or deleting older trades in the seeds
-      needs --full-refresh, and the equality test fails the build until that happens.
+      Daily PnL per book / trader / instrument in the book currency. A plain table rebuilt on every
+      run: it is small (one row per position per trading day), and every row depends on the full
+      trade history through running totals, so an incremental version would still have to rebuild
+      everything upstream of it. See docs/decisions.md.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [book, trader, instrument, position_date]
-      # The merge never deletes rows or revisits days older than pnl_lookback_days, so editing or
-      # deleting an older trade would leave this table stale. A failure here means: run --full-refresh.
-      - dbt_utils.equality:
-          arguments:
-            compare_model: ref('int_trading_pnl')
     columns:
-      # grain columns form the merge key; a null would make the merge insert duplicates
       - name: book
         description: "{{ doc('col_book') }}"
         data_tests: [not_null]

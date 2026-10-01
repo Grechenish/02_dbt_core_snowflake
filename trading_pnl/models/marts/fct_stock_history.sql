@@ -1,3 +1,12 @@
+{{
+    config(
+        materialized='incremental',
+        incremental_strategy='merge',
+        unique_key=['ticker', 'trade_date'],
+        on_schema_change='fail'
+    )
+}}
+
 -- Daily stock history with close prices converted to each report currency.
 -- FX rates are not published on every trading day (holidays differ between the US and the ECB),
 -- so each trading day takes the most recent rate on or before it.
@@ -6,7 +15,14 @@
 -- An ASOF JOIN without an ON key can't be parallelised, so joining it to every price row took
 -- ~10s on any warehouse size; the price rows then use a plain equi-join, which scales.
 with prices as (
-    select * from {{ ref('int_stock_prices_daily') }}
+    select *
+    from {{ ref('int_stock_prices_daily') }}
+    {% if is_incremental() %}
+    -- same window as int_stock_prices_daily, so every day it re-merged is re-converted here too
+    where trade_date >= (
+        select dateadd(day, -{{ var('market_data_lookback_days') }}, max(trade_date)) from {{ this }}
+    )
+    {% endif %}
 ),
 
 fx as (
@@ -35,7 +51,6 @@ select
     prices.high_price,
     prices.low_price,
     prices.close_price           as close_price_usd,
-    prices.close_price_adjusted  as close_price_adjusted_usd,
     prices.volume
     {%- for ccy in var("report_currencies") %},
     fx_{{ ccy | lower }}.fx_rate                                       as usd_{{ ccy | lower }}_rate,

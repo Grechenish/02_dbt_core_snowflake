@@ -74,3 +74,51 @@ unit_tests:
         - {book: B2, position_date: '2025-01-02', usd_fx_rate: 0.9, close_price: 90,  market_value: 900, cumulative_cash: -900, pnl: 0}
         - {book: B2, position_date: '2025-01-03', usd_fx_rate: 0.9, close_price: 99,  market_value: 990, cumulative_cash: -900, pnl: 90}
         - {book: B3, position_date: '2025-01-03', usd_fx_rate: 1,   close_price: 110, market_value: 110, cumulative_cash: -100, pnl: 10}
+
+  - name: int_stock_prices_daily__full_build_pivots_every_day
+    description: >
+      Without an existing table, every source day is pivoted to one row per ticker and day.
+      Volume-only rows with no close price are dropped.
+    model: int_stock_prices_daily
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_public_data__stock_prices')
+        rows:
+          - {ticker: AAPL, trade_date: '2025-01-02', asset_class: Equity, primary_exchange_name: NASDAQ, variable: post-market_close, value: 100}
+          - {ticker: AAPL, trade_date: '2025-01-02', asset_class: Equity, primary_exchange_name: NASDAQ, variable: nasdaq_volume, value: 5000}
+          - {ticker: AAPL, trade_date: '2025-01-02', asset_class: Equity, primary_exchange_name: NASDAQ, variable: post-market_close_adjusted, value: 99}
+          - {ticker: PSTR, trade_date: '2025-01-06', asset_class: Equity, primary_exchange_name: NASDAQ, variable: nasdaq_volume, value: 10}
+    expect:
+      rows:
+        - {ticker: AAPL, trade_date: '2025-01-02', close_price: 100, volume: 5000}
+
+  - name: int_stock_prices_daily__incremental_run_reads_only_the_lookback_window
+    description: >
+      On an incremental run the model only re-reads source days within var('market_data_lookback_days')
+      of the newest day already stored, so a late or restated day inside the window is re-pivoted (and
+      then merged over the old row), while older days are not touched.
+    model: int_stock_prices_daily
+    overrides:
+      macros:
+        is_incremental: true
+      vars:
+        market_data_lookback_days: 3
+    given:
+      - input: this
+        rows:
+          - {ticker: AAPL, trade_date: '2025-01-10', close_price: 105}
+      - input: ref('stg_public_data__stock_prices')
+        rows:
+          # older than 2025-01-10 minus 3 days: outside the window, not re-read
+          - {ticker: AAPL, trade_date: '2025-01-06', variable: post-market_close, value: 999}
+          # inside the window: a restated price and a late-arriving day
+          - {ticker: AAPL, trade_date: '2025-01-07', variable: post-market_close, value: 101.5}
+          - {ticker: AAPL, trade_date: '2025-01-10', variable: post-market_close, value: 106}
+          - {ticker: AAPL, trade_date: '2025-01-13', variable: post-market_close, value: 107}
+    expect:
+      rows:
+        - {ticker: AAPL, trade_date: '2025-01-07', close_price: 101.5}
+        - {ticker: AAPL, trade_date: '2025-01-10', close_price: 106}
+        - {ticker: AAPL, trade_date: '2025-01-13', close_price: 107}
