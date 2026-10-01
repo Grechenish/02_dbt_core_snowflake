@@ -132,7 +132,8 @@ The job runs these steps:
      dbt-hol build --target prod
    ```
    The `artifacts` folder is made world-writable (`chmod 777`) first, because the container runs as the non-root `dbt` user.
-4. Uploads `run_results.json` and `manifest.json` as the `dbt-run-results` artifact. This step runs even if the build fails (`if: always()`), so every run can be inspected afterwards.
+4. Runs `dbt source freshness --target prod` in a second container, even if the build failed (`if: always()`). If the Marketplace feed has stopped updating, this step marks the run as failed. It doesn't stop the models from being refreshed. Thresholds are described in [MODELS_DICTIONARY.md](MODELS_DICTIONARY.md#sources).
+5. Uploads `run_results.json` and `manifest.json` as the `dbt-run-results` artifact. This step also runs if earlier steps fail (`if: always()`), so every run can be inspected afterwards.
 
 **Locally** (with Docker Desktop installed):
 
