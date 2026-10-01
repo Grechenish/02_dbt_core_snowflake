@@ -3,66 +3,153 @@ version: 2
 models:
   - name: fct_stock_history
     description: >
-      Daily Nasdaq stock history (one row per ticker per trading day) with close prices
-      in USD and in each currency listed in var('report_currencies').
+      Daily history of US-listed securities from Nasdaq trading data (one row per ticker per trading
+      day) with close prices in USD and in each currency listed in var('report_currencies').
+      Each day takes the latest FX rate published on or before it.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [ticker, trade_date]
     columns:
       - name: ticker
+        description: "{{ doc('col_ticker') }}"
         data_tests: [not_null]
       - name: trade_date
+        description: "{{ doc('col_price_trade_date') }}"
         data_tests: [not_null]
+      - name: asset_class
+        description: "{{ doc('col_asset_class') }}"
+      - name: primary_exchange_name
+        description: "{{ doc('col_primary_exchange_name') }}"
+      - name: open_price
+        description: "{{ doc('col_open_price') }}"
+      - name: high_price
+        description: "{{ doc('col_high_price') }}"
+      - name: low_price
+        description: "{{ doc('col_low_price') }}"
       - name: close_price_usd
+        description: "{{ doc('col_close_price_usd') }}"
         data_tests: [not_null]
+      - name: close_price_adjusted_usd
+        description: Close price in USD adjusted for splits and dividends.
+      - name: volume
+        description: "{{ doc('col_volume') }}"
+      # one rate/price column pair per currency in var('report_currencies'); update these when it changes
+      - name: usd_eur_rate
+        description: USD -> EUR rate used for the day (latest published on or before it).
       - name: close_price_eur
+        description: Close price in EUR, rounded to 4 decimals.
         data_tests: [not_null]
+      - name: usd_gbp_rate
+        description: USD -> GBP rate used for the day (latest published on or before it).
       - name: close_price_gbp
+        description: Close price in GBP, rounded to 4 decimals.
         data_tests: [not_null]
 
   - name: fct_trading_pnl
     description: >
-      Daily PnL per book / trader / instrument in the book currency. Incremental (merge);
-      run with --full-refresh after editing historical trades in the seeds.
+      Daily PnL per book / trader / instrument in the book currency. Incremental (merge): each run
+      re-merges the last var('pnl_lookback_days') days. Editing or deleting older trades in the seeds
+      needs --full-refresh, and the equality test fails the build until that happens.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [book, trader, instrument, position_date]
+      # The merge never deletes rows or revisits days older than pnl_lookback_days, so editing or
+      # deleting an older trade would leave this table stale. A failure here means: run --full-refresh.
+      - dbt_utils.equality:
+          arguments:
+            compare_model: ref('int_trading_pnl')
     columns:
       # grain columns form the merge key; a null would make the merge insert duplicates
       - name: book
+        description: "{{ doc('col_book') }}"
         data_tests: [not_null]
       - name: trader
+        description: "{{ doc('col_trader') }}"
         data_tests: [not_null]
       - name: instrument
+        description: "{{ doc('col_instrument') }}"
         data_tests: [not_null]
+      - name: currency
+        description: "{{ doc('col_currency') }}"
       - name: position_date
+        description: "{{ doc('col_position_date') }}"
         data_tests: [not_null]
+      - name: action
+        description: "{{ doc('col_action') }}"
+      - name: traded_quantity
+        description: "{{ doc('col_traded_quantity') }}"
+      - name: cash_flow
+        description: "{{ doc('col_daily_cash_flow') }}"
+      - name: shares_held
+        description: "{{ doc('col_shares_held') }}"
+      - name: close_price_usd
+        description: "{{ doc('col_close_price_usd') }}"
+      - name: usd_fx_rate
+        description: "{{ doc('col_usd_fx_rate') }}"
+      - name: close_price
+        description: "{{ doc('col_close_price_book') }}"
+      - name: market_value
+        description: "{{ doc('col_market_value') }}"
+      - name: cumulative_cash
+        description: "{{ doc('col_cumulative_cash') }}"
       - name: pnl
+        description: "{{ doc('col_pnl') }}"
         data_tests: [not_null]
 
   - name: fct_trading_pnl_finance_view
-    description: Finance view - daily market value, cumulative cash and PnL per book.
+    description: >
+      Finance view: daily market value, cumulative cash and PnL per book, each in the book's own
+      currency. Books are never summed across currencies.
     data_tests:
       # one currency per book, so book + date is the grain
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [book, position_date]
     columns:
+      - name: book
+        description: "{{ doc('col_book') }}"
+      - name: currency
+        description: "{{ doc('col_currency') }}"
+      - name: position_date
+        description: "{{ doc('col_position_date') }}"
       - name: market_value
+        description: Book's total market value at the day's close, summed across traders and instruments.
         data_tests: [not_null]
+      - name: cumulative_cash
+        description: Book's total cumulative cash, summed across traders and instruments.
       - name: pnl
+        description: Book's total PnL to date, summed across traders and instruments.
         data_tests: [not_null]
 
   - name: fct_trading_pnl_risk_view
-    description: Risk view - open exposure per trader/instrument and its share of the book.
+    description: >
+      Risk view: open exposure per trader and instrument, and its share of the book's market value
+      (concentration risk). Closed positions are left out.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [book, trader, instrument, position_date]
     columns:
+      - name: book
+        description: "{{ doc('col_book') }}"
+      - name: trader
+        description: "{{ doc('col_trader') }}"
+      - name: instrument
+        description: "{{ doc('col_instrument') }}"
+      - name: currency
+        description: "{{ doc('col_currency') }}"
+      - name: position_date
+        description: "{{ doc('col_position_date') }}"
+      - name: shares_held
+        description: "{{ doc('col_shares_held') }}"
+      - name: market_value
+        description: "{{ doc('col_market_value') }}"
       - name: share_of_book
+        description: >
+          Position's share of the book's total market value that day, between 0 and 1 (4 decimals).
+          Shares add up to 1 per book and day (test assert_risk_view_shares_sum_to_one).
         data_tests:
           - not_null
           - dbt_utils.expression_is_true:
@@ -76,5 +163,12 @@ models:
           arguments:
             combination_of_columns: [currency, position_date]
     columns:
+      - name: currency
+        description: "{{ doc('col_currency') }}"
+      - name: position_date
+        description: "{{ doc('col_position_date') }}"
+      - name: cash_flow
+        description: Net cash moved by all trading in this currency that day.
       - name: cash_balance
+        description: Running total of cash_flow in this currency since the first trade.
         data_tests: [not_null]
