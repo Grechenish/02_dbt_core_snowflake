@@ -1,0 +1,2 @@
+trade_id,version,status,book,trader,instrument,side,quantity,price,currency,trade_date,booked_at
+T-1005,2,AMEND,Book1,Nick Z.,NVDA,BUY,200,101.52,GBP,2025-06-02,2025-06-03T09:15:27Z

@@ -1,0 +1,2 @@
+trade_id,version,status,book,trader,instrument,side,quantity,price,currency,trade_date,booked_at
+T-1014,1,NEW,Book1,Jeff A.,AAPL,SELL,90,226.71,GBP,2026-06-01,2026-06-01T16:20:05Z

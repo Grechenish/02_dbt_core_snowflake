@@ -17,3 +17,34 @@ sources:
         description: Daily Nasdaq prices and volumes per ticker, long format (one row per ticker/date/variable).
       - name: fx_rates_timeseries
         description: Daily FX rates per currency pair (base -> quote).
+
+  - name: raw_trades
+    description: >
+      Trade files loaded by ingestion/load_trades.py. Every column of TRADES is VARCHAR, exactly as
+      it appeared in the file; staging does the typing. See snowflake/02_databases.sql.
+    database: RAW
+    schema: TRADES
+    tables:
+      - name: trades
+        description: >
+          One row per row of every trade file ever loaded, including replays of the same file under
+          another name. Never updated or deleted, so it is the full audit trail of what arrived.
+        columns:
+          - name: _source_file
+            description: Stage path of the file the row came from (METADATA$FILENAME).
+          - name: _source_row_number
+            description: Row number inside that file (METADATA$FILE_ROW_NUMBER).
+          - name: _load_run_id
+            description: Loader run that loaded the row; joins to load_runs.run_id.
+          - name: _loaded_at
+            description: When the row was loaded.
+      - name: load_runs
+        description: One row per loader run, successful or not, with COPY INTO's per-file results.
+        config:
+          # Did the loader run successfully in the last day? The trade files themselves are a static
+          # synthetic set, so "new trades arrived" can't be checked; whether ingestion ran can.
+          loaded_at_field: "convert_timezone('UTC', finished_at)::timestamp_ntz"
+          freshness:
+            warn_after: {count: 26, period: hour}
+            error_after: {count: 74, period: hour}
+            filter: "status = 'SUCCEEDED'"
