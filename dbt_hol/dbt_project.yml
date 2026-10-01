@@ -26,6 +26,12 @@ clean-targets:         # directories to be removed by `dbt clean`
 vars:
   start_date: '2025-01-01'          # how far back to load source data
   report_currencies: ['EUR', 'GBP'] # USD prices are converted into these
+  pnl_lookback_days: 7              # fct_trading_pnl re-merges this many days on incremental runs
+  heavy_warehouse_size: 'SMALL'     # fct_trading_pnl pre-hook scales the target warehouse to this (guide uses XXLARGE)
+
+seeds:
+  dbt_hol:
+    +schema: seeds
 
 models:
   dbt_hol:
@@ -35,6 +41,8 @@ models:
     intermediate:
       +schema: intermediate
       +materialized: table
+      # heavy pivots/joins run on the LARGE warehouse of the current environment
+      +snowflake_warehouse: "{{ 'dbt_prod_heavy_wh' if target.name == 'prod' else 'dbt_dev_heavy_wh' }}"
     marts:
       +schema: marts
       +materialized: table

@@ -1,0 +1,14 @@
+version: 2
+
+seeds:
+  - name: manual_book1
+    description: Manually maintained trades of the GBP desk (Book1). Prices are per share in the book currency.
+    config:
+      column_types: &book_column_types
+        trade_date: date
+        quantity: number(38, 0)
+        price_per_share: number(18, 4)
+  - name: manual_book2
+    description: Manually maintained trades of the EUR desk (Book2). Prices are per share in the book currency.
+    config:
+      column_types: *book_column_types
