@@ -4,7 +4,7 @@ models:
   - name: int_stock_prices_daily
     description: >
       One row per ticker per trading day with open, high, low and close prices in USD plus volume,
-      pivoted from the long staging format. Incremental: each run re-pivots and merges the last
+      pivoted from the long staging format, including ticker-days without a close. Incremental: each run re-pivots and merges the last
       var('market_data_lookback_days') days. Only unadjusted prices are kept. The provider's adjusted
       prices are rewritten for the whole history after every split or dividend, which a lookback
       window can never pick up, so storing them incrementally would leave old rows silently wrong.
@@ -28,8 +28,10 @@ models:
       - name: low_price
         description: "{{ doc('col_low_price') }}"
       - name: close_price
-        description: "{{ doc('col_close_price_usd') }}"
-        data_tests: [not_null]
+        description: >
+          {{ doc('col_close_price_usd') }} Null for the few ticker-days the source delivers without
+          prices. Those rows are kept and measured (monitoring_market_data_daily) rather than
+          filtered out, because filtering here would make a not_null test meaningless.
       - name: volume
         description: "{{ doc('col_volume') }}"
 
@@ -167,6 +169,8 @@ models:
         description: "{{ doc('col_shares_held') }}"
       - name: close_price_usd
         description: "{{ doc('col_close_price_usd') }} Carried forward from last_price_date when the day has no price."
+        # BLOCK: null means the instrument had no price yet when the position opened; it can't be valued
+        data_tests: [not_null]
       - name: last_price_date
         description: Day the close price comes from.
       - name: price_age_days
@@ -178,9 +182,7 @@ models:
         description: "{{ doc('col_close_price_book') }}"
       - name: market_value
         description: "{{ doc('col_market_value') }}"
-        data_tests: [not_null]
       - name: cumulative_cash
         description: "{{ doc('col_cumulative_cash') }}"
       - name: pnl
         description: "{{ doc('col_pnl') }}"
-        data_tests: [not_null]

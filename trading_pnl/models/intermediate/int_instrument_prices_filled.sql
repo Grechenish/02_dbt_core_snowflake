@@ -14,6 +14,7 @@ prices as (
     select ticker, trade_date, close_price
     from {{ ref('int_stock_prices_daily') }}
     where ticker in (select instrument from instruments)
+      and close_price is not null
 ),
 
 daily as (
