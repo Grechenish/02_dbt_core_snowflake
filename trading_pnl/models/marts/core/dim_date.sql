@@ -5,6 +5,7 @@
 with priced_days as (
     select trade_date, count(*) as tickers_priced
     from {{ ref('int_stock_prices_daily') }}
+    where close_price is not null
     group by trade_date
 ),
 

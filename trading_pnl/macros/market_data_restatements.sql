@@ -17,7 +17,6 @@ source_prices as (
     from {{ ref('stg_public_data__stock_prices') }}
     where trade_date >= (select first_day from window_start)
     group by ticker, trade_date
-    having close_price is not null
 ),
 
 stored_prices as (

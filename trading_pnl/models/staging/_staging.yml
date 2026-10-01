@@ -24,11 +24,15 @@ models:
       - name: variable
         description: >
           Which measure the row holds: open, high, low or close price (each also split/dividend
-          adjusted), or Nasdaq volume. An unknown value fails the build, because the pivot downstream
-          would silently drop it.
+          adjusted), or Nasdaq volume. The pivot downstream ignores any other value.
         data_tests:
           - not_null
+          # WARN, not BLOCK: a new variable is simply ignored by the pivot, which is harmless. A renamed
+          # close variable is the dangerous case, and it shows up as missing closes, which
+          # monitoring_market_data_daily blocks on.
           - accepted_values:
+              config:
+                severity: warn
               arguments:
                 values:
                   - pre-market_open

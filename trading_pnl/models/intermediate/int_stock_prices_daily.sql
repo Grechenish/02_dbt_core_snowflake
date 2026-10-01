@@ -36,5 +36,7 @@ select
     max(case when variable = 'nasdaq_volume'      then value end)::number(38, 0) as volume
 from prices
 group by ticker, trade_date
--- The source has a handful of volume-only rows with no prices (e.g. PSTR, DSS on 2025-01-06); drop them.
-having close_price is not null
+-- Rows without a close are kept, not filtered out. The source has a handful of volume-only rows
+-- (e.g. PSTR, DSS on 2025-01-06); dropping them here would also hide a feed that suddenly loses
+-- most of its prices. monitoring_market_data_daily counts them and its tests decide whether that
+-- is normal (observe), unusual (warn) or a broken feed (block). Downstream models skip them explicitly.

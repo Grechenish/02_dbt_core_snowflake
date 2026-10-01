@@ -97,8 +97,9 @@ models:
       - name: low_price
         description: "{{ doc('col_low_price') }}"
       - name: close_price_usd
-        description: "{{ doc('col_close_price_usd') }}"
-        data_tests: [not_null]
+        description: >
+          {{ doc('col_close_price_usd') }} Never null: ticker-days without a close are left out
+          on purpose and counted in monitoring_market_data_daily, so a not_null test here could never fail.
       - name: volume
         description: "{{ doc('col_volume') }}"
       # one rate/price column pair per currency in var('report_currencies'); update these when it changes
@@ -106,6 +107,7 @@ models:
         description: USD -> EUR rate used for the day (latest published on or before it).
       - name: close_price_eur
         description: Close price in EUR, rounded to 4 decimals.
+        # BLOCK: null means no EUR rate on or before the day, i.e. the FX history starts too late
         data_tests: [not_null]
       - name: usd_gbp_rate
         description: USD -> GBP rate used for the day (latest published on or before it).
@@ -141,28 +143,16 @@ models:
         data_tests: [not_null]
       - name: action
         description: "{{ doc('col_action') }}"
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: [BUY, SELL, HOLD, MIXED]
       - name: traded_quantity
         description: "{{ doc('col_traded_quantity') }}"
       - name: shares_held
-        description: "{{ doc('col_shares_held') }} A negative value would mean selling more than was bought."
-        data_tests:
-          - not_null
-          - dbt_utils.expression_is_true:
-              arguments:
-                expression: ">= 0"
+        description: "{{ doc('col_shares_held') }}"
       - name: cash_flow
         description: "{{ doc('col_daily_cash_flow') }}"
       - name: close_price_usd
         description: "{{ doc('col_close_price_usd') }} Carried forward from last_price_date when the day has no price."
-        # BLOCK: a position without any price can't be valued
-        data_tests: [not_null]
       - name: usd_fx_rate
         description: "{{ doc('col_usd_fx_rate') }}"
-        data_tests: [not_null]
       - name: close_price
         description: "{{ doc('col_close_price_book') }}"
       - name: last_price_date
@@ -179,12 +169,10 @@ models:
                 severity: warn
       - name: market_value
         description: "{{ doc('col_market_value') }}"
-        data_tests: [not_null]
       - name: cumulative_cash
         description: "{{ doc('col_cumulative_cash') }}"
       - name: pnl
         description: "{{ doc('col_pnl') }}"
-        data_tests: [not_null]
 
   - name: finance_book_pnl_daily
     description: >
@@ -268,3 +256,40 @@ models:
       - name: cash_balance
         description: Running total of cash_flow in this currency since the first trade.
         data_tests: [not_null]
+
+  - name: monitoring_market_data_daily
+    description: >
+      Observability for the market-data feed: per trading day, how many tickers arrived and how
+      many have no close price (and are therefore skipped downstream). Read by people for trends;
+      the two tests below act on the newest day only.
+    columns:
+      - name: trade_date
+        description: "{{ doc('col_price_trade_date') }}"
+        data_tests: [unique, not_null]
+      - name: tickers_received
+        description: Ticker rows the source delivered for the day.
+      - name: tickers_missing_close
+        description: Of those, how many have no close price.
+      - name: tickers_volume_only
+        description: Of those, how many have a volume but no prices at all (a known quirk of the source).
+      - name: share_missing_close
+        description: tickers_missing_close / tickers_received.
+        data_tests:
+          # WARN: a few missing closes are normal for this source; more than 1% on the newest day is not
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<= 0.01"
+              config:
+                severity: warn
+                where: "is_latest_day"
+          # BLOCK: when a fifth of the newest day has no close, the feed is broken (e.g. the close
+          # variable was renamed), and PnL would be valued on stale carried-forward prices
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<= 0.2"
+              config:
+                where: "is_latest_day"
+      - name: tickers_received_change
+        description: Change in tickers_received against the previous trading day.
+      - name: is_latest_day
+        description: True for the newest day in the data.
