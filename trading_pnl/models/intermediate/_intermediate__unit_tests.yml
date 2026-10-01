@@ -8,20 +8,20 @@ unit_tests:
   - name: int_daily_position__holds_between_trades_and_tracks_shares
     description: >
       A BUY opens the position, trading days without a trade become HOLD rows, and a partial SELL
-      reduces shares_held. Price days before the first trade and other tickers produce no rows.
+      reduces shares_held. Days before the first trade and non-trading days produce no rows.
     model: int_daily_position
     given:
       - input: ref('int_trades_current')
         rows:
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-02', signed_quantity: 100, cash_flow: -10000}
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-06', signed_quantity: -40, cash_flow: 4400}
-      - input: ref('int_stock_prices_daily')
+      - input: ref('dim_date')
         rows:
-          - {ticker: AAPL, trade_date: '2024-12-31'}  # before the first trade: no row
-          - {ticker: AAPL, trade_date: '2025-01-02'}
-          - {ticker: AAPL, trade_date: '2025-01-03'}
-          - {ticker: AAPL, trade_date: '2025-01-06'}
-          - {ticker: MSFT, trade_date: '2025-01-03'}  # another ticker: no row
+          - {date_day: '2024-12-31', is_trading_day: true}   # before the first trade: no row
+          - {date_day: '2025-01-02', is_trading_day: true}
+          - {date_day: '2025-01-03', is_trading_day: true}
+          - {date_day: '2025-01-04', is_trading_day: false}  # weekend: no row
+          - {date_day: '2025-01-06', is_trading_day: true}
     expect:
       rows:
         - {book: B1, instrument: AAPL, position_date: '2025-01-02', action: BUY,  traded_quantity: 100, cash_flow: -10000, shares_held: 100}
@@ -39,20 +39,45 @@ unit_tests:
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-02', signed_quantity: 100, cash_flow: -10000}
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-03', signed_quantity: 50,  cash_flow: -5100}
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-03', signed_quantity: -50, cash_flow: 5200}
-      - input: ref('int_stock_prices_daily')
+      - input: ref('dim_date')
         rows:
-          - {ticker: AAPL, trade_date: '2025-01-02'}
-          - {ticker: AAPL, trade_date: '2025-01-03'}
+          - {date_day: '2025-01-02', is_trading_day: true}
+          - {date_day: '2025-01-03', is_trading_day: true}
     expect:
       rows:
         - {position_date: '2025-01-02', action: BUY,   traded_quantity: 100, cash_flow: -10000, shares_held: 100}
         - {position_date: '2025-01-03', action: MIXED, traded_quantity: 0,   cash_flow: 100,    shares_held: 100}
 
+  - name: int_instrument_prices_filled__carries_the_last_close_forward
+    description: >
+      AAPL has no price on 2025-01-03, although the market traded: it keeps the 2025-01-02 close
+      and reports a price age of 1 day. Only traded instruments are included.
+    model: int_instrument_prices_filled
+    given:
+      - input: ref('int_trades_current')
+        rows:
+          - {instrument: AAPL}
+      - input: ref('dim_date')
+        rows:
+          - {date_day: '2025-01-02', is_trading_day: true}
+          - {date_day: '2025-01-03', is_trading_day: true}
+          - {date_day: '2025-01-06', is_trading_day: true}
+      - input: ref('int_stock_prices_daily')
+        rows:
+          - {ticker: AAPL, trade_date: '2025-01-02', close_price: 100}
+          - {ticker: AAPL, trade_date: '2025-01-06', close_price: 103}
+          - {ticker: MSFT, trade_date: '2025-01-03', close_price: 400}  # not traded: ignored
+    expect:
+      rows:
+        - {instrument: AAPL, calendar_date: '2025-01-02', has_own_price: true,  close_price_usd: 100, last_price_date: '2025-01-02', price_age_days: 0}
+        - {instrument: AAPL, calendar_date: '2025-01-03', has_own_price: false, close_price_usd: 100, last_price_date: '2025-01-02', price_age_days: 1}
+        - {instrument: AAPL, calendar_date: '2025-01-06', has_own_price: true,  close_price_usd: 103, last_price_date: '2025-01-06', price_age_days: 0}
+
   - name: int_trading_pnl__marks_to_market_with_latest_fx_rate
     description: >
       An EUR book uses the latest USD->EUR rate on or before each day: none is published on
       2025-01-03, so the 2025-01-02 rate applies, and the later EUR rate and the GBP rate are ignored.
-      A USD book uses a rate of 1. pnl = market value + cumulative cash.
+      A USD book uses a rate of 1. pnl = market value + cumulative cash, unrounded.
     model: int_trading_pnl
     given:
       - input: ref('int_daily_position')
@@ -60,10 +85,10 @@ unit_tests:
           - {book: B2, trader: T2, instrument: AAPL, currency: EUR, position_date: '2025-01-02', action: BUY,  traded_quantity: 10, cash_flow: -900, shares_held: 10}
           - {book: B2, trader: T2, instrument: AAPL, currency: EUR, position_date: '2025-01-03', action: HOLD, traded_quantity: 0,  cash_flow: 0,    shares_held: 10}
           - {book: B3, trader: T3, instrument: AAPL, currency: USD, position_date: '2025-01-03', action: BUY,  traded_quantity: 1,  cash_flow: -100, shares_held: 1}
-      - input: ref('int_stock_prices_daily')
+      - input: ref('int_instrument_prices_filled')
         rows:
-          - {ticker: AAPL, trade_date: '2025-01-02', close_price: 100}
-          - {ticker: AAPL, trade_date: '2025-01-03', close_price: 110}
+          - {instrument: AAPL, calendar_date: '2025-01-02', close_price_usd: 100,    last_price_date: '2025-01-02', price_age_days: 0}
+          - {instrument: AAPL, calendar_date: '2025-01-03', close_price_usd: 110.01, last_price_date: '2025-01-03', price_age_days: 0}
       - input: ref('stg_public_data__fx_rates')
         rows:
           - {quote_currency: EUR, rate_date: '2025-01-02', fx_rate: 0.9}
@@ -71,9 +96,9 @@ unit_tests:
           - {quote_currency: GBP, rate_date: '2025-01-03', fx_rate: 0.8}   # other currency: ignored
     expect:
       rows:
-        - {book: B2, position_date: '2025-01-02', usd_fx_rate: 0.9, close_price: 90,  market_value: 900, cumulative_cash: -900, pnl: 0}
-        - {book: B2, position_date: '2025-01-03', usd_fx_rate: 0.9, close_price: 99,  market_value: 990, cumulative_cash: -900, pnl: 90}
-        - {book: B3, position_date: '2025-01-03', usd_fx_rate: 1,   close_price: 110, market_value: 110, cumulative_cash: -100, pnl: 10}
+        - {book: B2, position_date: '2025-01-02', usd_fx_rate: 0.9, close_price: 90,      market_value: 900,     cumulative_cash: -900, pnl: 0}
+        - {book: B2, position_date: '2025-01-03', usd_fx_rate: 0.9, close_price: 99.009,  market_value: 990.09,  cumulative_cash: -900, pnl: 90.09}
+        - {book: B3, position_date: '2025-01-03', usd_fx_rate: 1,   close_price: 110.01,  market_value: 110.01,  cumulative_cash: -100, pnl: 10.01}
 
   - name: int_stock_prices_daily__full_build_pivots_every_day
     description: >

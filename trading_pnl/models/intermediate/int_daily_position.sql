@@ -1,9 +1,13 @@
--- One row per position per trading day from its first trade onwards.
--- Days with a trade are BUY/SELL by net direction (MIXED if buys and sells cancel out);
--- every other trading day is a synthetic HOLD row.
+-- One row per position per trading day from its first trade onwards, on the shared trading
+-- calendar (dim_date). Days with a trade are BUY/SELL by net direction (MIXED if buys and sells
+-- cancel out); every other trading day is a synthetic HOLD row.
 with trades as (
     select
-        book, trader, instrument, currency, trade_date,
+        book,
+        trader,
+        instrument,
+        currency,
+        trade_date,
         sum(signed_quantity)  as traded_quantity,
         sum(cash_flow)        as cash_flow
     from {{ ref('int_trades_current') }}
@@ -16,13 +20,17 @@ positions as (
     group by all
 ),
 
--- trading calendar per instrument = the days the stock has a price
+trading_days as (
+    select date_day from {{ ref('dim_date') }} where is_trading_day
+),
+
 calendar as (
-    select positions.*, prices.trade_date as position_date
+    select
+        positions.*,
+        trading_days.date_day  as position_date
     from positions
-    join {{ ref('int_stock_prices_daily') }} as prices
-      on  prices.ticker = positions.instrument
-      and prices.trade_date >= positions.first_trade_date
+    inner join trading_days
+        on trading_days.date_day >= positions.first_trade_date
 )
 
 select
@@ -46,8 +54,8 @@ select
     )                                    as shares_held
 from calendar
 left join trades
-  on  trades.book       = calendar.book
-  and trades.trader     = calendar.trader
-  and trades.instrument = calendar.instrument
-  and trades.currency   = calendar.currency
-  and trades.trade_date = calendar.position_date
+    on  trades.book       = calendar.book
+    and trades.trader     = calendar.trader
+    and trades.instrument = calendar.instrument
+    and trades.currency   = calendar.currency
+    and trades.trade_date = calendar.position_date
