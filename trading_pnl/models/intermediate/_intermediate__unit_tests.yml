@@ -103,7 +103,7 @@ unit_tests:
   - name: int_stock_prices_daily__full_build_pivots_every_day
     description: >
       Without an existing table, every source day is pivoted to one row per ticker and day.
-      Volume-only rows with no close price are dropped.
+      Adjusted variables are ignored. A volume-only row is kept with a null close, so it can be counted.
     model: int_stock_prices_daily
     overrides:
       macros:
@@ -117,7 +117,8 @@ unit_tests:
           - {ticker: PSTR, trade_date: '2025-01-06', asset_class: Equity, primary_exchange_name: NASDAQ, variable: nasdaq_volume, value: 10}
     expect:
       rows:
-        - {ticker: AAPL, trade_date: '2025-01-02', close_price: 100, volume: 5000}
+        - {ticker: AAPL, trade_date: '2025-01-02', close_price: 100,  volume: 5000}
+        - {ticker: PSTR, trade_date: '2025-01-06', close_price: null, volume: 10}
 
   - name: int_stock_prices_daily__incremental_run_reads_only_the_lookback_window
     description: >

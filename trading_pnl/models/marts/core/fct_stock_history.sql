@@ -17,11 +17,13 @@
 with prices as (
     select *
     from {{ ref('int_stock_prices_daily') }}
+    -- ticker-days without a close have nothing to convert; monitoring_market_data_daily counts them
+    where close_price is not null
     {% if is_incremental() %}
-    -- same window as int_stock_prices_daily, so every day it re-merged is re-converted here too
-    where trade_date >= (
-        select dateadd(day, -{{ var('market_data_lookback_days') }}, max(trade_date)) from {{ this }}
-    )
+        -- same window as int_stock_prices_daily, so every day it re-merged is re-converted here too
+        and trade_date >= (
+            select dateadd(day, -{{ var('market_data_lookback_days') }}, max(trade_date)) from {{ this }}
+        )
     {% endif %}
 ),
 
