@@ -1,0 +1,6 @@
+book,trade_date,trader,instrument,action,quantity,price_per_share,currency
+Book2,2025-01-15,Tina M.,MSFT,BUY,30,414.96,EUR
+Book2,2025-03-10,Tina M.,NVDA,BUY,150,96.53,EUR
+Book2,2025-06-02,Tina M.,MSFT,BUY,20,403.11,EUR
+Book2,2025-11-03,Tina M.,NVDA,SELL,50,179.95,EUR
+Book2,2026-04-15,Tina M.,AAPL,BUY,80,226.57,EUR
