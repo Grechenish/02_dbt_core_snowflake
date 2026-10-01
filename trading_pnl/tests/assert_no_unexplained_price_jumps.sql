@@ -10,12 +10,12 @@ with moves as (
         instrument,
         calendar_date,
         close_price_usd,
-        lag(close_price_usd) over (partition by instrument order by calendar_date)  as previous_close
+        lag(close_price_usd) over (partition by instrument order by calendar_date) as previous_close
     from {{ ref('int_instrument_prices_filled') }}
 )
 
 select
     *,
-    div0(close_price_usd, previous_close) - 1  as relative_move
+    div0(close_price_usd, previous_close) - 1 as relative_move
 from moves
 where abs(div0(close_price_usd, previous_close) - 1) > 0.4

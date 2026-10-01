@@ -13,5 +13,5 @@ with versions as (
 select *
 from versions
 where (version = 1 and status <> 'NEW')
-   or (version > 1 and status not in ('AMEND', 'CANCEL'))
-   or previous_status = 'CANCEL'
+    or (version > 1 and status not in ('AMEND', 'CANCEL'))
+    or previous_status = 'CANCEL'

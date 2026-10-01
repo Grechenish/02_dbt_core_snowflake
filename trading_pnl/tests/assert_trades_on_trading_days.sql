@@ -5,6 +5,6 @@
 select trades.trade_id, trades.trade_date, calendar.day_name
 from {{ ref('int_trades_current') }} as trades
 left join {{ ref('dim_date') }} as calendar
-    on calendar.date_day = trades.trade_date
-where trades.trade_date <= (select max(date_day) from {{ ref('dim_date') }})
-  and not coalesce(calendar.is_trading_day, false)
+    on trades.trade_date = calendar.date_day
+where trades.trade_date <= (select max(all_days.date_day) from {{ ref('dim_date') }} as all_days)
+    and not coalesce(calendar.is_trading_day, false)

@@ -11,13 +11,13 @@ select
     action,
     traded_quantity,
     shares_held,
-    cash_flow::number(38, 6)         as cash_flow,
-    close_price_usd::number(38, 6)   as close_price_usd,
-    usd_fx_rate::number(38, 10)      as usd_fx_rate,
-    close_price::number(38, 6)       as close_price,
+    cash_flow::number(38, 6)       as cash_flow,
+    close_price_usd::number(38, 6) as close_price_usd,
+    usd_fx_rate::number(38, 10)    as usd_fx_rate,
+    close_price::number(38, 6)     as close_price,
     last_price_date,
     price_age_days,
-    market_value::number(38, 6)      as market_value,
-    cumulative_cash::number(38, 6)   as cumulative_cash,
-    pnl::number(38, 6)               as pnl
+    market_value::number(38, 6)    as market_value,
+    cumulative_cash::number(38, 6) as cumulative_cash,
+    pnl::number(38, 6)             as pnl
 from {{ ref('int_trading_pnl') }}

@@ -29,12 +29,12 @@ spine as (
 
 select
     spine.date_day,
-    year(spine.date_day)                         as calendar_year,
-    date_trunc(month, spine.date_day)            as calendar_month,
-    dayname(spine.date_day)                      as day_name,
-    dayofweekiso(spine.date_day) in (6, 7)       as is_weekend,
-    priced_days.trade_date is not null           as is_trading_day,
-    coalesce(priced_days.tickers_priced, 0)      as tickers_priced
+    year(spine.date_day)                    as calendar_year,
+    date_trunc(month, spine.date_day)       as calendar_month,
+    dayname(spine.date_day)                 as day_name,
+    dayofweekiso(spine.date_day) in (6, 7)  as is_weekend,
+    priced_days.trade_date is not null      as is_trading_day,
+    coalesce(priced_days.tickers_priced, 0) as tickers_priced
 from spine
 left join priced_days
-    on priced_days.trade_date = spine.date_day
+    on spine.date_day = priced_days.trade_date

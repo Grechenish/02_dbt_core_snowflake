@@ -10,12 +10,12 @@ with finance as (
 )
 
 select
-    coalesce(finance.currency, treasury.currency)            as currency,
-    coalesce(finance.position_date, treasury.position_date)  as position_date,
+    coalesce(finance.currency, treasury.currency)           as currency,
+    coalesce(finance.position_date, treasury.position_date) as position_date,
     finance.cumulative_cash,
     treasury.cash_balance
 from finance
 full outer join {{ ref('treasury_cash_balance_daily') }} as treasury
-    on  treasury.currency = finance.currency
-    and treasury.position_date = finance.position_date
+    on finance.currency = treasury.currency
+        and finance.position_date = treasury.position_date
 where abs(coalesce(finance.cumulative_cash, 0) - coalesce(treasury.cash_balance, 0)) > 0.02

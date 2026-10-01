@@ -10,12 +10,12 @@ select
     pnl.currency,
     pnl.position_date,
     pnl.shares_held,
-    round(pnl.market_value, 2)  as market_value,
+    round(pnl.market_value, 2) as market_value,
     round(
         div0(pnl.market_value, sum(pnl.market_value) over (partition by pnl.book, pnl.position_date)), 4
-    )                           as share_of_book,
+    )                          as share_of_book,
     pnl.price_age_days
 from {{ ref('fct_trading_pnl') }} as pnl
 left join {{ ref('dim_security') }} as securities
-    on securities.ticker = pnl.instrument
+    on pnl.instrument = securities.ticker
 where pnl.shares_held <> 0
