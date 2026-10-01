@@ -22,14 +22,14 @@ priced as (
         prices.last_price_date,
         prices.price_age_days,
         -- latest USD -> book-currency rate on or before the position date (not published every trading day)
-        case when positions.currency = 'USD' then 1 else fx.fx_rate end  as usd_fx_rate
+        case when positions.currency = 'USD' then 1 else fx.fx_rate end as usd_fx_rate
     from positions
     inner join prices
-        on  prices.instrument = positions.instrument
-        and prices.calendar_date = positions.position_date
+        on positions.instrument = prices.instrument
+            and positions.position_date = prices.calendar_date
     asof join fx
-        match_condition (positions.position_date >= fx.rate_date)
-        on fx.quote_currency = positions.currency
+        match_condition(positions.position_date >= fx.rate_date)
+        on positions.currency = fx.quote_currency
 )
 
 select
@@ -46,12 +46,12 @@ select
     last_price_date,
     price_age_days,
     usd_fx_rate,
-    close_price_usd * usd_fx_rate                  as close_price,
-    shares_held * close_price                      as market_value,
+    close_price_usd * usd_fx_rate  as close_price,
+    shares_held * close_price      as market_value,
     sum(cash_flow) over (
         partition by book, trader, instrument, currency
         order by position_date
         rows between unbounded preceding and current row
-    )                                              as cumulative_cash,
-    market_value + cumulative_cash                 as pnl
+    )                              as cumulative_cash,
+    market_value + cumulative_cash as pnl
 from priced

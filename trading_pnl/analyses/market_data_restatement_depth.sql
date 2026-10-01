@@ -9,14 +9,14 @@
 select
     difference,
     case
-        when age_days <= 5  then '0-5 days'
+        when age_days <= 5 then '0-5 days'
         when age_days <= 10 then '6-10 days'
         when age_days <= 30 then '11-30 days'
         else 'over 30 days'
-    end                    as age_bucket,
-    count(*)               as ticker_days,
+    end                        as age_bucket,
+    count(*)                   as ticker_days,
     count(distinct trade_date) as trade_dates,
-    max(age_days)          as oldest_age_days
+    max(age_days)              as oldest_age_days
 from ({{ market_data_restatements(var('restatement_check_days')) }})
-group by 1, 2
-order by 1, 2
+group by difference, age_bucket
+order by difference, age_bucket

@@ -10,10 +10,10 @@ with daily as (
 select
     currency,
     position_date,
-    round(cash_flow, 2)  as cash_flow,
+    round(cash_flow, 2) as cash_flow,
     round(sum(cash_flow) over (
         partition by currency
         order by position_date
         rows between unbounded preceding and current row
-    ), 2)                as cash_balance
+    ), 2)               as cash_balance
 from daily

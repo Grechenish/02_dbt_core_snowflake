@@ -7,9 +7,9 @@
 with daily as (
     select
         trade_date,
-        count(*)                                        as tickers_received,
-        count_if(close_price is null)                   as tickers_missing_close,
-        count_if(close_price is null and volume is not null)  as tickers_volume_only
+        count(*)                                             as tickers_received,
+        count_if(close_price is null)                        as tickers_missing_close,
+        count_if(close_price is null and volume is not null) as tickers_volume_only
     from {{ ref('int_stock_prices_daily') }}
     group by trade_date
 )
@@ -19,8 +19,8 @@ select
     tickers_received,
     tickers_missing_close,
     tickers_volume_only,
-    div0(tickers_missing_close, tickers_received)                 as share_missing_close,
+    div0(tickers_missing_close, tickers_received)      as share_missing_close,
     tickers_received
-        - lag(tickers_received) over (order by trade_date)        as tickers_received_change,
-    trade_date = max(trade_date) over ()                          as is_latest_day
+    - lag(tickers_received) over (order by trade_date) as tickers_received_change,
+    trade_date = max(trade_date) over ()               as is_latest_day
 from daily

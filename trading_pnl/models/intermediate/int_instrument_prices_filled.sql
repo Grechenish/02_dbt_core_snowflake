@@ -7,46 +7,47 @@ with instruments as (
 ),
 
 trading_days as (
-    select date_day from {{ ref('dim_date') }} where is_trading_day
+    select date_day from {{ ref('dim_date') }}
+    where is_trading_day
 ),
 
 prices as (
     select ticker, trade_date, close_price
     from {{ ref('int_stock_prices_daily') }}
-    where ticker in (select instrument from instruments)
-      and close_price is not null
+    where ticker in (select instruments.instrument from instruments)
+        and close_price is not null
 ),
 
 daily as (
     select
         instruments.instrument,
-        trading_days.date_day  as calendar_date,
+        trading_days.date_day as calendar_date,
         prices.close_price,
-        prices.trade_date      as price_date
+        prices.trade_date     as price_date
     from instruments
     cross join trading_days
     left join prices
-        on  prices.ticker = instruments.instrument
-        and prices.trade_date = trading_days.date_day
+        on instruments.instrument = prices.ticker
+            and trading_days.date_day = prices.trade_date
 ),
 
 filled as (
     select
         instrument,
         calendar_date,
-        close_price is not null  as has_own_price,
+        close_price is not null as has_own_price,
         last_value(close_price) ignore nulls over (
             partition by instrument order by calendar_date
             rows between unbounded preceding and current row
-        )                        as close_price_usd,
+        )                       as close_price_usd,
         last_value(price_date) ignore nulls over (
             partition by instrument order by calendar_date
             rows between unbounded preceding and current row
-        )                        as last_price_date
+        )                       as last_price_date
     from daily
 )
 
 select
     *,
-    datediff(day, last_price_date, calendar_date)  as price_age_days
+    datediff(day, last_price_date, calendar_date) as price_age_days
 from filled
