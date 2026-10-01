@@ -69,14 +69,18 @@ jobs:
       SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_CI_PRIVATE_KEY }}
       DBT_SCHEMA: CI_PR_${{ github.event.pull_request.number }}
     steps:
+      # Checkout first: the summary step at the end runs even when this job fails early.
+      - uses: actions/checkout@v7
+
       - name: Check Snowflake secrets are configured
         run: |
-          if [ -z "$SNOWFLAKE_ACCOUNT" ] || [ -z "$SNOWFLAKE_PRIVATE_KEY" ]; then
-            echo "::error::SNOWFLAKE_ACCOUNT and SNOWFLAKE_DBT_CI_PRIVATE_KEY secrets are not set; see docs/CI_CD.md"
+          missing=""
+          [ -n "$SNOWFLAKE_ACCOUNT" ] || missing="$missing SNOWFLAKE_ACCOUNT"
+          [ -n "$SNOWFLAKE_PRIVATE_KEY" ] || missing="$missing SNOWFLAKE_DBT_CI_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Repository secrets not set:$missing (see docs/CI_CD.md, Setting it up)"
             exit 1
           fi
-
-      - uses: actions/checkout@v7
 
       - name: Build image
         run: docker build -t trading-pnl .
