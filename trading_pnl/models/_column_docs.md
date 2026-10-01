@@ -33,6 +33,10 @@ All-day low price in USD (source variable `all-day_low`).
 Number of shares traded on Nasdaq that day (source variable `nasdaq_volume`).
 {% enddocs %}
 
+{% docs col_trade_id %}
+Identifier the order-management system gives a trade. Stays the same across all its versions.
+{% enddocs %}
+
 {% docs col_book %}
 Trading book (desk) that owns the position, e.g. `Book1`. Each book reports in a single currency.
 {% enddocs %}

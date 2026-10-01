@@ -1,7 +1,7 @@
 name: ci
 
 # Every pull request is checked twice before it can merge:
-#   1. static checks: SQL lint, Python tests, Docker image build and dbt parse. No Snowflake access needed.
+#   1. static checks: SQL lint, loader tests, Docker image build and dbt parse. No Snowflake access needed.
 #   2. dbt build on Snowflake: the changed models and everything downstream of them are built and
 #      tested in the pull request's own schemas (ANALYTICS_DEV.CI_PR_<number>_*), reading unchanged
 #      models from production. ci-cleanup.yml drops those schemas when the pull request closes.
@@ -36,6 +36,12 @@ jobs:
           python -m venv /tmp/lint
           /tmp/lint/bin/pip install --quiet -r requirements-lint.txt
           /tmp/lint/bin/sqlfluff lint trading_pnl/models trading_pnl/tests trading_pnl/analyses
+
+      - name: Test the trade loader
+        run: |
+          pip install --quiet -r requirements.txt -r requirements-dev.txt
+          pytest
+          python ingestion/load_trades.py --dry-run
 
       - name: Build image
         run: docker build -t trading-pnl .

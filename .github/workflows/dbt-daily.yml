@@ -46,6 +46,14 @@ jobs:
           docker build -t trading-pnl .
           mkdir -p artifacts/freshness artifacts/observe artifacts/docs && chmod -R 777 artifacts   # the container runs as a non-root user
 
+      # Load any new trade files into RAW. Safe to re-run: files already loaded are skipped.
+      - name: Load trade files
+        env:
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_LOADER_PRIVATE_KEY }}
+        run: |
+          docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
+            --entrypoint python trading-pnl /app/ingestion/load_trades.py
+
       # Fails the run (and skips the build) if a source has stopped updating, so a stale feed is
       # noticed instead of silently republishing old numbers. Warnings don't stop the run.
       - name: Check source freshness

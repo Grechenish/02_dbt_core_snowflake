@@ -33,18 +33,24 @@ models:
       - name: volume
         description: "{{ doc('col_volume') }}"
 
-  - name: int_trading_book
+  - name: int_trades_current
     description: >
-      Trades of all desks (union of the manual_book seeds by column name) with the direction turned
-      into a signed quantity and a cash flow. One row per trade; there is no natural key, because two
-      identical trades on the same day are valid.
+      Every live trade in its latest version: amendments applied, cancelled trades removed. The
+      direction is turned into a signed quantity and a cash flow in the book currency.
     columns:
+      - name: trade_id
+        description: "{{ doc('col_trade_id') }}"
+        data_tests: [unique, not_null]
+      - name: current_version
+        description: Version of the trade these values come from (the highest one received).
       - name: book
         description: "{{ doc('col_book') }}"
-        data_tests: [not_null]
-      - name: trade_date
-        description: Date the trade was executed. It must be a trading day for the instrument (test assert_trades_on_trading_days).
-        data_tests: [not_null]
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('books')
+                field: book
       - name: trader
         description: "{{ doc('col_trader') }}"
         data_tests: [not_null]
@@ -56,39 +62,24 @@ models:
               arguments:
                 to: ref('int_stock_prices_daily')
                 field: ticker
-      - name: action
-        description: Trade direction, `BUY` or `SELL`, upper-cased from the seed.
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: [BUY, SELL]
+      - name: side
+        description: Trade direction, `BUY` or `SELL`.
       - name: quantity
-        description: Number of shares traded. Always positive; the direction comes from `action`.
-        data_tests:
-          - not_null
-          - dbt_utils.expression_is_true:
-              arguments:
-                expression: "> 0"
+        description: Number of shares traded. Always positive; the direction comes from `side`.
       - name: signed_quantity
         description: "`+quantity` for a BUY and `-quantity` for a SELL."
-      - name: price_per_share
+      - name: price
         description: Execution price per share in the book currency.
-        data_tests:
-          - not_null
-          - dbt_utils.expression_is_true:
-              arguments:
-                expression: "> 0"
       - name: currency
         description: "{{ doc('col_currency') }}"
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: [USD, EUR, GBP]
+      - name: trade_date
+        description: Date the trade was executed. Can be earlier than the day it was booked (back-dated trades).
+      - name: booked_at_utc
+        description: When the latest version was booked, in UTC.
       - name: cash_flow
         description: >
-          Cash moved by the trade in the book currency: `-signed_quantity × price_per_share`, so
-          negative when buying (cash leaves the book) and positive when selling.
+          Cash moved by the trade in the book currency: `-signed_quantity × price`, so negative
+          when buying (cash leaves the book) and positive when selling.
 
   - name: int_daily_position
     description: >
