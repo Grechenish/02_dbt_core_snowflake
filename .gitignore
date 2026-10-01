@@ -13,3 +13,8 @@ logs/
 
 # dbt Cloud CLI binary (not used -- this project uses dbt Core)
 dbt.exe
+
+#cloude
+
+.claude/
+
