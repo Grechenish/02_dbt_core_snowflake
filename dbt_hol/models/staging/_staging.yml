@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: stg_public_data__stock_prices
+    description: Stock price variables since var('start_date'), renamed. Still long format.
+    columns:
+      - name: ticker
+        data_tests: [not_null]
+      - name: trade_date
+        data_tests: [not_null]
+      - name: variable
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - pre-market_open
+                  - pre-market_open_adjusted
+                  - all-day_high
+                  - all-day_high_adjusted
+                  - all-day_low
+                  - all-day_low_adjusted
+                  - post-market_close
+                  - post-market_close_adjusted
+                  - nasdaq_volume
+
+  - name: stg_public_data__fx_rates
+    description: USD -> report currency daily FX rates since var('start_date').
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [quote_currency, rate_date]
+    columns:
+      - name: fx_rate
+        data_tests: [not_null]

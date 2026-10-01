@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: int_stock_prices_daily
+    description: One row per ticker per trading day with OHLC prices (USD) and volume.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date]
+    columns:
+      - name: close_price
+        data_tests: [not_null]

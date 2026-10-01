@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: public_data
+    description: Snowflake Public Data (Free) marketplace share - Financial & Economic Essentials.
+    database: SNOWFLAKE_PUBLIC_DATA_FREE
+    schema: PUBLIC_DATA_FREE
+    tables:
+      - name: stock_price_timeseries
+        description: Daily Nasdaq prices and volumes per ticker, long format (one row per ticker/date/variable).
+      - name: fx_rates_timeseries
+        description: Daily FX rates per currency pair (base -> quote).

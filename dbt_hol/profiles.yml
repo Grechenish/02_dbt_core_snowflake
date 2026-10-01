@@ -1,0 +1,28 @@
+# Credentials come from environment variables -- never commit secrets.
+# See ../.env.example for the variables to set.
+dbt_hol:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', 'dbt_user') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: dbt_dev_role
+      warehouse: dbt_dev_wh
+      database: dbt_hol_dev
+      schema: public
+      threads: 4
+      client_session_keep_alive: false
+
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', 'dbt_user') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: dbt_prod_role
+      warehouse: dbt_prod_wh
+      database: dbt_hol_prod
+      schema: public
+      threads: 4
+      client_session_keep_alive: false
