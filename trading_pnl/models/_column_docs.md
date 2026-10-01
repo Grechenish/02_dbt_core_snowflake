@@ -54,7 +54,7 @@ Book currency (`GBP`, `EUR` or `USD`). Cash, prices, values and PnL are expresse
 {% enddocs %}
 
 {% docs col_position_date %}
-Trading day the row describes. Days come from the instrument's price history, so weekends and market holidays have no rows.
+Trading day the row describes, from the shared calendar `dim_date`. Weekends and market holidays have no rows.
 {% enddocs %}
 
 {% docs col_action %}
@@ -82,11 +82,15 @@ USD to book-currency rate used for the day: the latest rate published on or befo
 {% enddocs %}
 
 {% docs col_close_price_book %}
-Day's close price in the book currency: `close_price_usd × usd_fx_rate`, rounded to 4 decimals.
+Day's close price in the book currency: `close_price_usd × usd_fx_rate`.
 {% enddocs %}
 
 {% docs col_market_value %}
-Value of the shares held at the day's close, in the book currency, rounded to 2 decimals.
+Value of the shares held at the day's close, in the book currency: `shares_held × close_price`.
+{% enddocs %}
+
+{% docs col_price_age_days %}
+Calendar days between the position date and the day its close price is from. 0 when the instrument traded that day; above 0 when the last known price was carried forward, so consumers can see how stale a valuation is.
 {% enddocs %}
 
 {% docs col_cumulative_cash %}
@@ -94,5 +98,5 @@ Running total of the position's cash flows since its first trade, in the book cu
 {% enddocs %}
 
 {% docs col_pnl %}
-Profit and loss to date in the book currency: `market_value + cumulative_cash`, rounded to 2 decimals. Once a position is fully sold, it equals the realized result.
+Profit and loss to date in the book currency: `market_value + cumulative_cash`. Once a position is fully sold, it equals the realized result.
 {% enddocs %}
