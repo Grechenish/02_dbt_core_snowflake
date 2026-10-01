@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # Keeps the workflow actions current (e.g. the Node 20 -> 24 runtime moves).
+  # Python packages are locked in requirements.txt and refreshed by hand: see docs/README.md.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
