@@ -1,28 +1,31 @@
-# Credentials come from environment variables -- never commit secrets.
-# See ../.env.example for the variables to set.
+# Connection settings per environment. Nothing secret is stored here: it all comes from
+# environment variables (see ../.env.example). Each environment has its own Snowflake user, role,
+# warehouse and database, so a run can only write where its role allows (snowflake/03_roles_and_grants.sql).
 trading_pnl:
   target: dev
   outputs:
+    # A person working locally, logged in as themselves through the browser (SSO, or password + MFA).
+    # Builds into ANALYTICS_DEV under DEV_<USER>_*, so developers never touch each other's tables.
     dev:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
-      user: "{{ env_var('SNOWFLAKE_USER', 'dbt_user') }}"
-      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
-      role: dbt_dev_role
-      warehouse: dbt_dev_wh
-      database: dbt_hol_dev
-      schema: public
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      authenticator: externalbrowser
+      role: developer
+      warehouse: dev_wh
+      database: analytics_dev
+      schema: "{{ env_var('DBT_SCHEMA', 'DEV_' ~ env_var('SNOWFLAKE_USER') | upper) }}"
       threads: 4
-      client_session_keep_alive: false
 
+    # The daily GitHub Actions run. Service user with key-pair authentication.
     prod:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
-      user: "{{ env_var('SNOWFLAKE_USER', 'dbt_user') }}"
-      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
-      role: dbt_prod_role
-      warehouse: dbt_prod_wh
-      database: dbt_hol_prod
-      schema: public
+      user: svc_dbt_prod
+      private_key: "{{ env_var('SNOWFLAKE_PRIVATE_KEY') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: transformer_prod
+      warehouse: transform_wh
+      database: analytics
+      schema: public  # unused: every model folder sets its own schema
       threads: 4
-      client_session_keep_alive: false

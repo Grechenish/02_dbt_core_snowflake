@@ -32,15 +32,14 @@ jobs:
       - name: Run dbt build (prod)
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_PROD_PRIVATE_KEY }}
           FULL_REFRESH: ${{ inputs.full_refresh }}   # empty on scheduled runs
         run: |
           mkdir -p artifacts && chmod 777 artifacts   # container runs as non-root user
           extra_args=""
           if [ "$FULL_REFRESH" = "true" ]; then extra_args="--full-refresh"; fi
           docker run --rm \
-            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
+            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
             -v "$PWD/artifacts:/app/trading_pnl/target" \
             trading-pnl build --target prod $extra_args
 
@@ -48,12 +47,11 @@ jobs:
       - name: Generate dbt docs (prod)
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_PROD_PRIVATE_KEY }}
         run: |
           mkdir -p artifacts/docs && chmod 777 artifacts/docs
           docker run --rm \
-            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
+            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
             -v "$PWD/artifacts/docs:/app/trading_pnl/target" \
             trading-pnl docs generate --static --target prod
           mkdir -p site && cp artifacts/docs/static_index.html site/index.html
@@ -69,12 +67,11 @@ jobs:
         if: always()
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_PROD_PRIVATE_KEY }}
         run: |
           mkdir -p artifacts/freshness && chmod 777 artifacts/freshness
           docker run --rm \
-            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
+            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
             -v "$PWD/artifacts/freshness:/app/trading_pnl/target" \
             trading-pnl source freshness --target prod
 
