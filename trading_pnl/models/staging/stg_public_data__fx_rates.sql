@@ -3,7 +3,7 @@ select
     quote_currency_id  as quote_currency,
     quote_currency_name,
     date               as rate_date,
-    value              as fx_rate,
+    value::number(38, 10)  as fx_rate,  -- FLOAT in the source; fixed-point from here on
     provenance:source::varchar     as rate_source,
     provenance:rate_type::varchar  as rate_type
 from {{ source('public_data', 'fx_rates_timeseries') }}

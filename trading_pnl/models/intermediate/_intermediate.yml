@@ -81,10 +81,33 @@ models:
           Cash moved by the trade in the book currency: `-signed_quantity × price`, so negative
           when buying (cash leaves the book) and positive when selling.
 
+  - name: int_instrument_prices_filled
+    description: >
+      One row per traded instrument per trading day of the shared calendar, with the latest close
+      price on or before that day (carried forward over days the instrument has no price of its own).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [instrument, calendar_date]
+    columns:
+      - name: instrument
+        description: "{{ doc('col_instrument') }}"
+      - name: calendar_date
+        description: Trading day from dim_date.
+      - name: has_own_price
+        description: True when the instrument has its own close for this day, false when it is carried forward.
+      - name: close_price_usd
+        description: Close on this day, or the last close before it. Null only before the instrument's first price.
+      - name: last_price_date
+        description: Day close_price_usd comes from.
+      - name: price_age_days
+        description: "{{ doc('col_price_age_days') }}"
+
   - name: int_daily_position
     description: >
       One row per position (book / trader / instrument / currency) per trading day from its first
-      trade onwards, so every position can be valued every day. Days without a trade are HOLD rows.
+      trade onwards, on the shared trading calendar, so every position can be valued every day.
+      Days without a trade are HOLD rows.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -120,8 +143,9 @@ models:
 
   - name: int_trading_pnl
     description: >
-      Daily positions marked to market in the book currency, with cumulative cash and PnL.
-      FX uses the latest rate on or before each day (ASOF JOIN), because rates aren't published on every trading day.
+      Daily positions marked to market in the book currency, with cumulative cash and PnL, at full
+      precision. FX uses the latest rate on or before each day (ASOF JOIN), because rates aren't
+      published on every trading day.
     columns:
       - name: book
         description: "{{ doc('col_book') }}"
@@ -142,7 +166,11 @@ models:
       - name: shares_held
         description: "{{ doc('col_shares_held') }}"
       - name: close_price_usd
-        description: "{{ doc('col_close_price_usd') }}"
+        description: "{{ doc('col_close_price_usd') }} Carried forward from last_price_date when the day has no price."
+      - name: last_price_date
+        description: Day the close price comes from.
+      - name: price_age_days
+        description: "{{ doc('col_price_age_days') }}"
       - name: usd_fx_rate
         description: "{{ doc('col_usd_fx_rate') }}"
         data_tests: [not_null]

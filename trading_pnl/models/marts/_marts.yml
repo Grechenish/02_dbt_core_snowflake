@@ -1,6 +1,74 @@
 version: 2
 
+# Data-quality tiers (docs/decisions.md, "Data quality tiers"):
+#   BLOCK  severity error (the default): the build stops and nothing downstream is published.
+#   WARN   severity warn: the run stays green, the warning shows in the run summary.
+#   OBSERVE no test: measured in monitoring_market_data_daily and read by people.
+
 models:
+  - name: dim_date
+    description: >
+      Shared trading calendar: one row per calendar day from var('start_date') to the newest
+      market-data day. A day is a trading day when the market data has prices for it. Every
+      position and price series in the project uses these trading days.
+    columns:
+      - name: date_day
+        description: Calendar day.
+        data_tests: [unique, not_null]
+      - name: calendar_year
+        description: Year of the day.
+      - name: calendar_month
+        description: First day of the day's month.
+      - name: day_name
+        description: Short weekday name, e.g. `Mon`.
+      - name: is_weekend
+        description: Saturday or Sunday.
+      - name: is_trading_day
+        description: True when the market data has prices for the day.
+        data_tests:
+          # BLOCK: a weekend "trading day" would mean the source has rows on non-trading days and
+          # the calendar can't be trusted
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "not (is_trading_day and is_weekend)"
+      - name: tickers_priced
+        description: >
+          Number of tickers with a close price on the day. A real trading day has thousands; a
+          handful means a partial or stray day in the source.
+        data_tests:
+          # WARN: a trading day with few prices is probably a partial delivery
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "tickers_priced = 0 or tickers_priced >= 1000"
+              config:
+                severity: warn
+
+  - name: dim_security
+    description: One row per ticker in the market data, with its latest asset class and listing exchange.
+    columns:
+      - name: ticker
+        description: "{{ doc('col_ticker') }}"
+        data_tests: [unique, not_null]
+      - name: asset_class
+        description: "{{ doc('col_asset_class') }}"
+      - name: primary_exchange_name
+        description: "{{ doc('col_primary_exchange_name') }}"
+      - name: first_price_date
+        description: First day the ticker has a price since var('start_date').
+      - name: last_price_date
+        description: Newest day the ticker has a price.
+
+  - name: dim_book
+    description: Trading books and their reporting currency, from the `books` seed.
+    columns:
+      - name: book
+        description: "{{ doc('col_book') }}"
+        data_tests: [unique, not_null]
+      - name: desk_name
+        description: Desk that owns the book.
+      - name: base_currency
+        description: Currency the book reports in.
+
   - name: fct_stock_history
     description: >
       Daily history of US-listed securities from Nasdaq trading data (one row per ticker per trading
@@ -47,10 +115,11 @@ models:
 
   - name: fct_trading_pnl
     description: >
-      Daily PnL per book / trader / instrument in the book currency. A plain table rebuilt on every
-      run: it is small (one row per position per trading day), and every row depends on the full
-      trade history through running totals, so an incremental version would still have to rebuild
-      everything upstream of it. See docs/decisions.md.
+      Daily PnL per book / trader / instrument in the book currency, one row per position per
+      trading day. A plain table rebuilt on every run: it is small, and every row depends on the
+      whole trade history through running totals, so an incremental version would still have to
+      recompute everything upstream of it (docs/decisions.md). Amounts keep 6 decimals; the
+      department marts round after aggregating.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -72,30 +141,55 @@ models:
         data_tests: [not_null]
       - name: action
         description: "{{ doc('col_action') }}"
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [BUY, SELL, HOLD, MIXED]
       - name: traded_quantity
         description: "{{ doc('col_traded_quantity') }}"
+      - name: shares_held
+        description: "{{ doc('col_shares_held') }} A negative value would mean selling more than was bought."
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
       - name: cash_flow
         description: "{{ doc('col_daily_cash_flow') }}"
-      - name: shares_held
-        description: "{{ doc('col_shares_held') }}"
       - name: close_price_usd
-        description: "{{ doc('col_close_price_usd') }}"
+        description: "{{ doc('col_close_price_usd') }} Carried forward from last_price_date when the day has no price."
+        # BLOCK: a position without any price can't be valued
+        data_tests: [not_null]
       - name: usd_fx_rate
         description: "{{ doc('col_usd_fx_rate') }}"
+        data_tests: [not_null]
       - name: close_price
         description: "{{ doc('col_close_price_book') }}"
+      - name: last_price_date
+        description: Day the close price comes from.
+      - name: price_age_days
+        description: "{{ doc('col_price_age_days') }}"
+        data_tests:
+          # WARN: a valuation on a price more than 5 days old is probably stale (a halt or missing data),
+          # but the rest of the book is still worth publishing
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<= 5"
+              config:
+                severity: warn
       - name: market_value
         description: "{{ doc('col_market_value') }}"
+        data_tests: [not_null]
       - name: cumulative_cash
         description: "{{ doc('col_cumulative_cash') }}"
       - name: pnl
         description: "{{ doc('col_pnl') }}"
         data_tests: [not_null]
 
-  - name: fct_trading_pnl_finance_view
+  - name: finance_book_pnl_daily
     description: >
-      Finance view: daily market value, cumulative cash and PnL per book, each in the book's own
-      currency. Books are never summed across currencies.
+      Finance: daily market value, cumulative cash and PnL per book, each in the book's own
+      currency, rounded to cents after summing. Books are never summed across currencies.
     data_tests:
       # one currency per book, so book + date is the grain
       - dbt_utils.unique_combination_of_columns:
@@ -104,6 +198,8 @@ models:
     columns:
       - name: book
         description: "{{ doc('col_book') }}"
+      - name: desk_name
+        description: Desk that owns the book.
       - name: currency
         description: "{{ doc('col_currency') }}"
       - name: position_date
@@ -116,11 +212,13 @@ models:
       - name: pnl
         description: Book's total PnL to date, summed across traders and instruments.
         data_tests: [not_null]
+      - name: daily_pnl
+        description: Change in the book's PnL since the previous trading day. Null on the book's first day.
 
-  - name: fct_trading_pnl_risk_view
+  - name: risk_position_exposure_daily
     description: >
-      Risk view: open exposure per trader and instrument, and its share of the book's market value
-      (concentration risk). Closed positions are left out.
+      Risk: open exposure per trader and instrument, its share of the book's market value
+      (concentration risk) and the age of the price behind it. Closed positions are left out.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -132,6 +230,8 @@ models:
         description: "{{ doc('col_trader') }}"
       - name: instrument
         description: "{{ doc('col_instrument') }}"
+      - name: asset_class
+        description: "{{ doc('col_asset_class') }}"
       - name: currency
         description: "{{ doc('col_currency') }}"
       - name: position_date
@@ -139,19 +239,21 @@ models:
       - name: shares_held
         description: "{{ doc('col_shares_held') }}"
       - name: market_value
-        description: "{{ doc('col_market_value') }}"
+        description: "{{ doc('col_market_value') }} Rounded to cents."
       - name: share_of_book
         description: >
           Position's share of the book's total market value that day, between 0 and 1 (4 decimals).
-          Shares add up to 1 per book and day (test assert_risk_view_shares_sum_to_one).
+          Shares add up to 1 per book and day (test assert_risk_shares_sum_to_one).
         data_tests:
           - not_null
           - dbt_utils.expression_is_true:
               arguments:
                 expression: "between 0 and 1"
+      - name: price_age_days
+        description: "{{ doc('col_price_age_days') }}"
 
-  - name: fct_trading_pnl_treasury_view
-    description: Treasury view - daily cash flows and running cash balance per currency.
+  - name: treasury_cash_balance_daily
+    description: Treasury - daily cash flows and running cash balance per currency, rounded to cents.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

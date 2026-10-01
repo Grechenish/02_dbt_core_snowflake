@@ -1,10 +1,10 @@
--- Every trade must fall on a day the instrument has a price; otherwise it would
--- silently drop out of the daily position calendar.
-select book.book, book.trader, book.instrument, book.trade_date
-from {{ ref('int_trades_current') }} as book
-where not exists (
-    select 1
-    from {{ ref('int_stock_prices_daily') }} as prices
-    where prices.ticker = book.instrument
-      and prices.trade_date = book.trade_date
-)
+-- BLOCK. Positions are carried on trading days only, from var('start_date') onwards, so a trade
+-- dated on a weekend, a market holiday or before the start date would never enter a position and
+-- would vanish from PnL without an error. Trades newer than the newest market-data day are
+-- covered by assert_trades_within_market_data instead.
+select trades.trade_id, trades.trade_date, calendar.day_name
+from {{ ref('int_trades_current') }} as trades
+left join {{ ref('dim_date') }} as calendar
+    on calendar.date_day = trades.trade_date
+where trades.trade_date <= (select max(date_day) from {{ ref('dim_date') }})
+  and not coalesce(calendar.is_trading_day, false)
