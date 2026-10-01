@@ -1,0 +1,3 @@
+trade_id,version,status,book,trader,instrument,side,quantity,price,currency,trade_date,booked_at
+T-1003,1,NEW,Book1,Jeff A.,AAPL,BUY,50,174.26,GBP,2025-03-10,2025-03-10T14:05:12Z
+T-1004,1,NEW,Book2,Tina M.,NVDA,BUY,150,96.53,EUR,2025-03-10,2025-03-10T16:21:30Z

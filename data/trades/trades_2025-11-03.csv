@@ -1,0 +1,4 @@
+trade_id,version,status,book,trader,instrument,side,quantity,price,currency,trade_date,booked_at
+T-1009,1,NEW,Book1,Nick Z.,NVDA,SELL,100,157.72,GBP,2025-11-03,2025-11-03T14:55:40Z
+T-1010,1,NEW,Book2,Tina M.,NVDA,SELL,50,179.95,EUR,2025-11-03,2025-11-03T15:12:18Z
+T-1011,1,NEW,Book1,Nick Z.,MSFT,BUY,15,384.20,GBP,2025-10-20,2025-11-03T17:40:02Z

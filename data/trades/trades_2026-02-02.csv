@@ -1,0 +1,2 @@
+trade_id,version,status,book,trader,instrument,side,quantity,price,currency,trade_date,booked_at
+T-1012,1,NEW,Book1,Nick Z.,MSFT,BUY,40,310.03,GBP,2026-02-02,2026-02-02T14:38:16Z

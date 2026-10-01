@@ -1,0 +1,2 @@
+trade_id,version,status,book,trader,instrument,side,quantity,price,currency,trade_date,booked_at
+T-1013,1,NEW,Book2,Tina M.,AAPL,BUY,80,226.57,EUR,2026-04-15,2026-04-15T15:01:47Z

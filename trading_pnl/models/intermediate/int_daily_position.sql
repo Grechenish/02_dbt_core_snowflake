@@ -6,7 +6,7 @@ with trades as (
         book, trader, instrument, currency, trade_date,
         sum(signed_quantity)  as traded_quantity,
         sum(cash_flow)        as cash_flow
-    from {{ ref('int_trading_book') }}
+    from {{ ref('int_trades_current') }}
     group by all
 ),
 

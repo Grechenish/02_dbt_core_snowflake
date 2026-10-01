@@ -1,4 +1,4 @@
-# dbt Core + Snowflake runner image, used by every GitHub Actions workflow.
+# dbt Core + Snowflake runner image with the trade loader, used by every GitHub Actions workflow.
 # Credentials are NOT baked in: pass SNOWFLAKE_ACCOUNT and SNOWFLAKE_PRIVATE_KEY at runtime, and pick
 # the environment explicitly with --target ci or --target prod.
 FROM python:3.14-slim
@@ -17,6 +17,10 @@ RUN pip install -r requirements.txt
 COPY trading_pnl/ trading_pnl/
 WORKDIR /app/trading_pnl
 RUN dbt deps
+
+# The trade loader and the files it loads: docker run --entrypoint python trading-pnl /app/ingestion/load_trades.py
+COPY ingestion/load_trades.py /app/ingestion/
+COPY data/trades/ /app/data/trades/
 
 # Run as an unprivileged user; dbt writes target/ and logs/ into the project dir.
 RUN useradd --create-home dbt && chown -R dbt:dbt /app

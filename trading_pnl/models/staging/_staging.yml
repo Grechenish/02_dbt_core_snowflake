@@ -72,3 +72,81 @@ models:
         description: Publisher of the rate, from the source's `provenance` JSON, e.g. `ECB`.
       - name: rate_type
         description: How the rate was produced, from `provenance`, e.g. `Derived Inverse` or `Derived Cross`.
+
+  - name: stg_trades__trade_versions
+    description: >
+      One row per trade version (trade_id + version) with every column cast to its type. Rows that
+      arrived more than once (a replayed file) are kept once, from their first load. Casts use
+      TRY_ functions, so a malformed value becomes NULL here and fails the not_null tests below
+      instead of failing the whole query; _source_file and _source_row_number say where it came from.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [trade_id, version]
+    columns:
+      - name: trade_id
+        description: "{{ doc('col_trade_id') }}"
+        data_tests: [not_null]
+      - name: version
+        description: Version of the trade. 1 is the original booking; every correction adds one.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 1"
+      - name: status
+        description: "`NEW` for version 1, then `AMEND` (replaces the trade's values) or `CANCEL` (removes the trade)."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [NEW, AMEND, CANCEL]
+      - name: book
+        description: "{{ doc('col_book') }}"
+        data_tests: [not_null]
+      - name: trader
+        description: "{{ doc('col_trader') }}"
+        data_tests: [not_null]
+      - name: instrument
+        description: "{{ doc('col_instrument') }}"
+        data_tests: [not_null]
+      - name: side
+        description: "`BUY` or `SELL`."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [BUY, SELL]
+      - name: quantity
+        description: Number of shares, always positive. Cast to NUMBER(18, 0).
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: price
+        description: Execution price per share in the book currency. Cast to NUMBER(18, 6), never FLOAT.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: currency
+        description: "{{ doc('col_currency') }}"
+        data_tests: [not_null]
+      - name: trade_date
+        description: Date the trade was executed.
+        data_tests: [not_null]
+      - name: booked_at_utc
+        description: When this version was booked, converted to UTC.
+        data_tests: [not_null]
+      - name: _source_file
+        description: File this version was first loaded from.
+      - name: _source_row_number
+        description: Row number inside that file.
+      - name: _load_run_id
+        description: Loader run (RAW.TRADES.LOAD_RUNS) that first loaded it.
+      - name: _loaded_at
+        description: When it was first loaded.
+      - name: times_loaded
+        description: >
+          How many times this version arrived in RAW. More than 1 means a file was replayed; the
+          extra copies are dropped here.

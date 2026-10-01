@@ -11,7 +11,7 @@ unit_tests:
       reduces shares_held. Price days before the first trade and other tickers produce no rows.
     model: int_daily_position
     given:
-      - input: ref('int_trading_book')
+      - input: ref('int_trades_current')
         rows:
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-02', signed_quantity: 100, cash_flow: -10000}
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-06', signed_quantity: -40, cash_flow: 4400}
@@ -34,7 +34,7 @@ unit_tests:
       and the day's net cash (the realized result of the round trip) is kept.
     model: int_daily_position
     given:
-      - input: ref('int_trading_book')
+      - input: ref('int_trades_current')
         rows:
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-02', signed_quantity: 100, cash_flow: -10000}
           - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-03', signed_quantity: 50,  cash_flow: -5100}
@@ -122,3 +122,35 @@ unit_tests:
         - {ticker: AAPL, trade_date: '2025-01-07', close_price: 101.5}
         - {ticker: AAPL, trade_date: '2025-01-10', close_price: 106}
         - {ticker: AAPL, trade_date: '2025-01-13', close_price: 107}
+
+  - name: stg_trades__trade_versions__replayed_rows_are_kept_once
+    description: >
+      The same trade version loaded from two files (a resend) becomes one row, taken from the
+      first load, with times_loaded = 2. Text values are trimmed, upper-cased and cast.
+    model: stg_trades__trade_versions
+    given:
+      - input: source('raw_trades', 'trades')
+        rows:
+          - {trade_id: T-1, version: '1', status: new, book: Book1, trader: A, instrument: aapl, side: buy, quantity: '10', price: '100.5', currency: gbp, trade_date: '2025-03-10', booked_at: '2025-03-10T14:00:00Z', _source_file: trades_2025-03-10.csv.gz, _source_row_number: 1, _loaded_at: '2025-03-10 18:00:00'}
+          - {trade_id: T-1, version: '1', status: new, book: Book1, trader: A, instrument: aapl, side: buy, quantity: '10', price: '100.5', currency: gbp, trade_date: '2025-03-10', booked_at: '2025-03-10T14:00:00Z', _source_file: trades_2025-03-10_resend.csv.gz, _source_row_number: 1, _loaded_at: '2025-03-11 18:00:00'}
+    expect:
+      rows:
+        - {trade_id: T-1, version: 1, status: NEW, instrument: AAPL, side: BUY, quantity: 10, price: 100.5, currency: GBP, trade_date: '2025-03-10', _source_file: trades_2025-03-10.csv.gz, times_loaded: 2}
+
+  - name: int_trades_current__amendments_replace_and_cancellations_remove
+    description: >
+      T-1 was amended from 2000 to 200 shares: only version 2 counts. T-2 was cancelled: it
+      disappears. T-3 was never changed. A SELL gets a negative quantity and a positive cash flow.
+    model: int_trades_current
+    given:
+      - input: ref('stg_trades__trade_versions')
+        rows:
+          - {trade_id: T-1, version: 1, status: NEW,    side: BUY,  quantity: 2000, price: 10, trade_date: '2025-06-02'}
+          - {trade_id: T-1, version: 2, status: AMEND,  side: BUY,  quantity: 200,  price: 10, trade_date: '2025-06-02'}
+          - {trade_id: T-2, version: 1, status: NEW,    side: BUY,  quantity: 25,   price: 50, trade_date: '2025-09-15'}
+          - {trade_id: T-2, version: 2, status: CANCEL, side: BUY,  quantity: 25,   price: 50, trade_date: '2025-09-15'}
+          - {trade_id: T-3, version: 1, status: NEW,    side: SELL, quantity: 5,    price: 20, trade_date: '2025-11-03'}
+    expect:
+      rows:
+        - {trade_id: T-1, current_version: 2, quantity: 200, signed_quantity: 200, cash_flow: -2000}
+        - {trade_id: T-3, current_version: 1, quantity: 5,   signed_quantity: -5,  cash_flow: 100}
