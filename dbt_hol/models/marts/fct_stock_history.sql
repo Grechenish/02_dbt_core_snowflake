@@ -1,17 +1,28 @@
 -- Daily stock history with close prices converted to each report currency.
 -- FX rates are not published on every trading day (holidays differ between the US and the ECB),
--- so we ASOF-join the most recent rate on or before the trade date.
+-- so each trading day takes the most recent rate on or before it.
+--
+-- Performance: the ASOF JOIN runs against the ~400 distinct trading days, not the ~4M price rows.
+-- An ASOF JOIN without an ON key can't be parallelised, so joining it to every price row took
+-- ~10s on any warehouse size; the price rows then use a plain equi-join, which scales.
 with prices as (
     select * from {{ ref('int_stock_prices_daily') }}
 ),
 
 fx as (
     select * from {{ ref('stg_public_data__fx_rates') }}
+),
+
+trading_days as (
+    select distinct trade_date from prices
 )
 
 {% for ccy in var("report_currencies") %}
 , fx_{{ ccy | lower }} as (
-    select rate_date, fx_rate from fx where quote_currency = '{{ ccy }}'
+    select trading_days.trade_date, rates.fx_rate
+    from trading_days
+    asof join (select rate_date, fx_rate from fx where quote_currency = '{{ ccy }}') as rates
+        match_condition (trading_days.trade_date >= rates.rate_date)
 )
 {% endfor %}
 
@@ -32,6 +43,6 @@ select
     {%- endfor %}
 from prices
 {%- for ccy in var("report_currencies") %}
-asof join fx_{{ ccy | lower }}
-    match_condition (prices.trade_date >= fx_{{ ccy | lower }}.rate_date)
+left join fx_{{ ccy | lower }}
+    on fx_{{ ccy | lower }}.trade_date = prices.trade_date
 {%- endfor %}
