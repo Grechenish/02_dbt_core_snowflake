@@ -1,6 +1,7 @@
 # dbt Core + Snowflake runner image.
 # Credentials are NOT baked in: pass SNOWFLAKE_ACCOUNT / SNOWFLAKE_USER / SNOWFLAKE_PASSWORD at runtime
-# (e.g. `docker run --env-file .env dbt-hol`).
+# (e.g. `docker run --env-file .env dbt-hol`, which builds the dev target).
+# Production only runs when `--target prod` is passed explicitly, as the scheduled workflow does.
 FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -10,6 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DBT_PROFILES_DIR=/app/dbt_hol
 
 WORKDIR /app
+# requirements.txt is the full lock (every transitive package pinned), compiled from requirements.in.
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
@@ -22,4 +24,5 @@ RUN useradd --create-home dbt && chown -R dbt:dbt /app
 USER dbt
 
 ENTRYPOINT ["dbt"]
-CMD ["build", "--target", "prod"]
+# Safe default: a bare `docker run dbt-hol` builds dev, never production.
+CMD ["build", "--target", "dev"]
