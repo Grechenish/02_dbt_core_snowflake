@@ -101,6 +101,7 @@ models:
       - name: status
         description: "`NEW` for version 1, then `AMEND` (replaces the trade's values) or `CANCEL` (removes the trade)."
         data_tests:
+          - not_null
           - accepted_values:
               arguments:
                 values: [NEW, AMEND, CANCEL]
