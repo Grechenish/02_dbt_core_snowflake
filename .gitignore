@@ -1,0 +1,15 @@
+# Python
+.venv/
+__pycache__/
+
+# Secrets
+.env
+
+# dbt artifacts
+target/
+dbt_packages/
+logs/
+.user.yml
+
+# dbt Cloud CLI binary (not used -- this project uses dbt Core)
+dbt.exe

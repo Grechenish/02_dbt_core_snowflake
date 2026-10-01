@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: fct_stock_history
+    description: >
+      Daily Nasdaq stock history (one row per ticker per trading day) with close prices
+      in USD and in each currency listed in var('report_currencies').
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ticker, trade_date]
+    columns:
+      - name: ticker
+        data_tests: [not_null]
+      - name: trade_date
+        data_tests: [not_null]
+      - name: close_price_usd
+        data_tests: [not_null]
+      - name: close_price_eur
+        data_tests: [not_null]
+      - name: close_price_gbp
+        data_tests: [not_null]
