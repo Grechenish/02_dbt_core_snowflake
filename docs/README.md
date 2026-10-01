@@ -20,7 +20,7 @@ The project builds daily stock history (USD, EUR, GBP) and a trading PnL mart fr
 | The `dbt_user` password | Ask the project owner. Never commit it or paste it into a chat. |
 | Git | To clone the repository |
 | Docker Desktop | For the container workflow in section 2 |
-| Python 3.11 or newer | Only for the local workflow in section 5. The project runs on 3.14. |
+| Python 3.14 | Only for the local workflow in section 5. The dependency lock (`requirements.txt`) is compiled for 3.14, the same version as the Docker image. |
 
 ---
 
@@ -61,13 +61,13 @@ docker run --rm --env-file .env dbt-hol debug --target dev
 docker run --rm --env-file .env dbt-hol build --target dev
 ```
 
-This builds the seeds, all 11 models and all 50 tests in `DBT_HOL_DEV`, in about 40 seconds. A successful run ends with:
+This builds the seeds and all 11 models in `DBT_HOL_DEV` and runs all 51 data tests and 3 unit tests, in about a minute. A successful run ends with:
 
 ```
-Done. PASS=63 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=63
+Done. PASS=67 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=67
 ```
 
-> ⚠️ **Always pass `--target dev` when developing.** The image's default command is `dbt build --target prod`, which is what the scheduled job runs. Running `docker run ... dbt-hol` with no arguments rebuilds **production**.
+> The image's default command is `dbt build --target dev`, so `docker run ... dbt-hol` with no arguments builds **dev**. Production only runs when `--target prod` is passed explicitly, which is what the scheduled job does.
 
 Anything after the image name is passed to `dbt`, so any dbt command works the same way:
 
@@ -125,14 +125,14 @@ Use this order on a fresh database:
 ```bash
 docker run --rm --env-file .env dbt-hol seed --target dev   # 1. load trade blotters into SEEDS
 docker run --rm --env-file .env dbt-hol run  --target dev   # 2. build all 11 models
-docker run --rm --env-file .env dbt-hol test --target dev   # 3. run all 50 data tests
+docker run --rm --env-file .env dbt-hol test --target dev   # 3. run all data and unit tests
 ```
 
 | Step | What it does | What you should see |
 |---|---|---|
 | `seed` | Loads `seeds/manual_book1.csv` (7 trades) and `manual_book2.csv` (5 trades) | `PASS=2` |
 | `run` | Builds staging views, intermediate tables, marts | `PASS=11` |
-| `test` | Runs generic tests from the YAML files and the singular tests in `tests/` | `PASS=50` |
+| `test` | Runs the generic tests from the YAML files, the singular tests in `tests/` and the unit tests | `PASS=54` |
 
 **Order matters on a fresh database.** `int_trading_book` uses `dbt_utils.union_relations`, which reads the seed tables' columns when it runs. If you run `run` before `seed` has ever succeeded, it can't find those columns. It then generates an empty column list, and Snowflake rejects it with a **confusing SQL compilation error** about the union, not a "seed missing" message. `build` handles the order for you.
 
@@ -170,12 +170,16 @@ docker run --rm -p 8080:8080 --env-file .env --entrypoint sh dbt-hol \
 
 Then open <http://localhost:8080>.
 
+The production version of this site is published to GitHub Pages by the daily workflow after every successful build. The link is in the root README.
+
 ### 4.6 Production
 
 Production runs automatically every day at 07:00 UTC via `.github/workflows/dbt-daily.yml`.
 
-- **To run it now:** GitHub → **Actions** → **dbt daily build** → **Run workflow**.
-- **What a run produces:** each run uploads `run_results.json` and `manifest.json` as the `dbt-run-results` artifact.
+- **To run it now:** GitHub → **Actions** → **dbt daily build** → **Run workflow**. Don't use **Re-run** to test new code: a re-run replays the commit of the original run.
+- **To rebuild the incremental PnL fact from scratch:** tick **full_refresh** in the **Run workflow** form.
+- **What a run produces:** each run uploads `run_results.json`, `manifest.json` and the freshness results (`freshness/sources.json`) as the `dbt-run-results` artifact. After a successful build it also republishes the dbt docs site to GitHub Pages.
+- **Pull requests:** `.github/workflows/ci.yml` builds the image and runs `dbt --warn-error parse` on every pull request and push to main. It needs no Snowflake credentials.
 - **Manual prod commands:** avoid running prod by hand from your machine. If you must, it's the same commands with `--target prod`.
 
 ---
@@ -214,11 +218,14 @@ $p = Read-Host "Snowflake password" -AsSecureString
 | Task | How |
 |---|---|
 | **Add or fix a trade** | Edit `dbt_hol/seeds/manual_book*.csv`, then run `dbt build`. The trade date must be a trading day (test `assert_trades_on_trading_days`), the ticker must exist in the price data, and the quantity must be positive. |
-| **Correct a trade older than 7 days** | Do the above, then run `dbt build --full-refresh -s fct_trading_pnl` once. The incremental fact only reprocesses the last `pnl_lookback_days` days. |
+| **Correct or delete a trade older than 7 days** | Do the above, then run `dbt build --full-refresh -s fct_trading_pnl` once. The incremental fact only reprocesses the last `pnl_lookback_days` days, and its equality test fails until you do. In production, use **Run workflow** with **full_refresh** ticked. |
 | **Add a trading desk** | Add `seeds/manual_book3.csv` with the same columns, add it to the `relations` list in `int_trading_book.sql`, and add it to `seeds/_seeds.yml`. |
 | **Add a reporting currency** | Add it to `report_currencies` in `dbt_project.yml`, then add a `not_null` test for `close_price_<ccy>` in `models/marts/_marts.yml`. |
 | **Load more history** | Change `start_date` in `dbt_project.yml`, or for one run only use `--vars '{start_date: "2024-01-01"}'`. More history means more rows and cost; see [PERFORMANCE.md](PERFORMANCE.md). |
 | **Find a model's queries in Snowflake** | Query History → filter on `QUERY_TAG = 'dbt_hol.<model_name>'`. |
+| **Run only the unit tests** | `dbt test --select "test_type:unit"`. They live in `models/intermediate/_intermediate__unit_tests.yml`. |
+| **Use the LARGE warehouses** | Add `--vars '{use_heavy_compute: true}'` to the command. Intermediate models then run on `DBT_*_HEAVY_WH`, and `fct_trading_pnl` resizes the target warehouse around its run. It's off by default because it costs more than it saves at this data size ([PERFORMANCE.md](PERFORMANCE.md)). |
+| **Upgrade dbt or another Python package** | Edit `requirements.in`, then regenerate the lock with `pip install uv` and `uv pip compile requirements.in --universal --python-version 3.14 -o requirements.txt`. Reinstall with `pip install -r requirements.txt` and run `dbt build` before committing. |
 
 ---
 
@@ -237,5 +244,7 @@ These errors all came up while the project was being set up.
 | Test `assert_trades_on_trading_days` fails | A trade is dated on a weekend, a holiday, or a day with no price data | Fix the date in the seed CSV |
 | Test on `shares_held >= 0` fails | A seed sells more shares than were bought | Fix the quantities in the seed |
 | Freshness `WARN` or `ERROR` | The Marketplace feed has slowed down or stopped | Check the listing in Snowsight. Models still build on the data that's available. |
-| `DBT_DEV_WH` / `DBT_PROD_WH` left at a larger size | `fct_trading_pnl` failed, so its post-hook didn't reset the size | Re-run successfully, or `ALTER WAREHOUSE dbt_dev_wh SET WAREHOUSE_SIZE = 'XSMALL';` |
+| `DBT_DEV_WH` / `DBT_PROD_WH` left at a larger size | Only with `use_heavy_compute`: `fct_trading_pnl` failed, so its post-hook didn't reset the size | Re-run successfully, or `ALTER WAREHOUSE dbt_dev_wh SET WAREHOUSE_SIZE = 'XSMALL';` |
+| Test `dbt_utils_equality_fct_trading_pnl_...` fails | `fct_trading_pnl` has drifted from `int_trading_pnl`: a trade older than `pnl_lookback_days` was edited or deleted, or the model's columns changed | `dbt build --full-refresh -s fct_trading_pnl`. In production, **Run workflow** with **full_refresh** ticked. |
+| A unit test fails | The logic of `int_daily_position` or `int_trading_pnl` no longer matches the hand-computed fixtures | If the change is intended, update the expected rows in `models/intermediate/_intermediate__unit_tests.yml`. Otherwise fix the model. |
 | Scheduled runs fail after about 30 days | The Snowflake trial ended and the account is suspended | Add a payment method to the account |
