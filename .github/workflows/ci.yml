@@ -25,5 +25,5 @@ jobs:
       - name: Parse dbt project
         run: |
           docker run --rm \
-            -e SNOWFLAKE_ACCOUNT=ci-placeholder -e SNOWFLAKE_PASSWORD=ci-placeholder \
+            -e SNOWFLAKE_ACCOUNT=ci-placeholder -e SNOWFLAKE_USER=ci-placeholder \
             trading-pnl --warn-error parse
