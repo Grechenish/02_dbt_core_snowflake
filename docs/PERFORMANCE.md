@@ -19,8 +19,8 @@ Architecture context is in [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md).
 | Data volume | 3.89 M rows each in `int_stock_prices_daily` and `fct_stock_history`. 1,495 rows in the trading PnL models. |
 | Bottleneck found | `fct_stock_history` took about 10 s **on every warehouse size**. The cause was an `ASOF JOIN` with no `ON` key, which Snowflake can't run in parallel. |
 | Fix | Look up FX rates per trading day, then use an ordinary equality join. The output is identical (0 rows differ), and the model is **2.8× faster** on XSMALL (9.6 s → 3.4 s). |
-| Warehouse sizing | The pivot scales with size, but saves only about 4 s on LARGE. That doesn't justify resuming a LARGE warehouse every day (section 5). |
-| Estimated daily cost | About **0.2 credits per run** with the current config, or about **0.03** with everything on XSMALL. |
+| Warehouse sizing | The pivot scales with size, but saves only about 4 s on LARGE. That doesn't justify resuming a LARGE warehouse every day (section 5), so the LARGE warehouse is now opt-in. |
+| Estimated daily cost | About **0.03 credits per run** with the default config (everything on XSMALL), or about **0.2** with `use_heavy_compute`. |
 
 ---
 
@@ -118,7 +118,7 @@ At this data size, these minimum charges cost more than the queries themselves.
 
 These figures are estimates based on the measured runtimes. Section 5.4 shows how to get the real numbers.
 
-| Item | Current configuration | Everything on XSMALL |
+| Item | With `use_heavy_compute` (the original configuration) | Default: everything on XSMALL |
 |---|---|---|
 | `DBT_PROD_WH` (XSMALL): about 40 s active plus 60 s idle | ≈ 0.028 | ≈ 0.031 (plus about 5 s for the pivot) |
 | `DBT_PROD_HEAVY_WH` (LARGE): about 10 s active, 60 s minimum on resume, plus 60 s idle | ≈ 0.16 | 0 (not used) |
@@ -126,17 +126,15 @@ These figures are estimates based on the measured runtimes. Section 5.4 shows ho
 | **Total per run** | **≈ 0.2 credits** | **≈ 0.03 credits** |
 | **Per month (30 daily runs)** | **≈ 6 credits** | **≈ 1 credit** |
 
-**About 80% of today's cost comes from resuming the LARGE warehouse to save about 4 seconds of pivot time.**
+**With `use_heavy_compute`, about 80% of the cost comes from resuming the LARGE warehouse to save about 4 seconds of pivot time.**
 
 ### 5.3 Recommendations
 
 1. **Keep the `fct_stock_history` fix.** It's faster on every warehouse size and changes no output.
-2. **Run the intermediate layer on the default XSMALL warehouse** while data stays at this size. To do that:
-   - Remove `+snowflake_warehouse` from `models: dbt_hol: intermediate` in `dbt_project.yml`.
-   - Remove the `pre_hook` and `post_hook` from `fct_trading_pnl`. The model runs in about 1.4 s, so resizing the warehouse gains nothing and adds a 60-second minimum charge.
+2. **Run the intermediate layer on the default XSMALL warehouse** while data stays at this size. **Done:** the `+snowflake_warehouse` routing for intermediate models and the `fct_trading_pnl` resize hooks now only apply with `--vars '{use_heavy_compute: true}'`, and are off by default. The model runs in about 1.4 s, so resizing the warehouse gains nothing and adds a 60-second minimum charge.
 
-   The heavy warehouses and the resize-hook pattern come from the Snowflake quickstart guide (section 21). They're useful once a model runs for minutes, not seconds.
-3. **Revisit when data grows.** For example, if `start_date` moves back to 2018, the stock source has about 5× more rows. Rerun the benchmark in section 4. A heavy warehouse starts paying off once a model's runtime is well above 60 seconds on XSMALL.
+   The heavy warehouses and the resize-hook pattern come from the Snowflake quickstart guide (section 21). They're useful once a model runs for minutes, not seconds, which is why they stay available behind the var.
+3. **Revisit when data grows.** For example, if `start_date` moves back to 2018, the stock source has about 5× more rows. Rerun the benchmark in section 4. A heavy warehouse starts paying off once a model's runtime is well above 60 seconds on XSMALL, and then turning on `use_heavy_compute` is a one-flag change.
 
 ### 5.4 Measuring actual credits
 

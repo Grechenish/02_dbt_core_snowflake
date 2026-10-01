@@ -1,6 +1,6 @@
 # Data Models Dictionary
 
-This is a reference for every node in the `dbt_hol` project: 2 sources, 2 seeds, 11 models and 2 singular tests. For each one it gives the business purpose, how it's materialized, its lineage, its key logic and the tests that guard it.
+This is a reference for every node in the `dbt_hol` project: 2 sources, 2 seeds, 11 models, 2 singular tests and 3 unit tests. For each one it gives the business purpose, how it's materialized, its lineage, its key logic and the tests that guard it.
 
 The layering approach, schemas and warehouses are explained in [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md). Runtimes and sizing are in [PERFORMANCE.md](PERFORMANCE.md).
 
@@ -9,7 +9,7 @@ The layering approach, schemas and warehouses are explained in [SYSTEM_OVERVIEW.
 - Object names are written as dbt names them. In Snowflake they appear in upper case, for example `DBT_HOL_PROD.MARTS.FCT_TRADING_PNL`.
 - **Grain** means the set of columns that uniquely identifies one row.
 - Row counts are from the dev build on 2026-10-01, with `start_date = 2025-01-01`.
-- Variables referenced: `start_date`, `report_currencies` (default `['EUR', 'GBP']`), `pnl_lookback_days` (default `7`) and `heavy_warehouse_size` (default `'SMALL'`).
+- Variables referenced: `start_date`, `report_currencies` (default `['EUR', 'GBP']`), `pnl_lookback_days` (default `7`), `heavy_warehouse_size` (default `'SMALL'`) and `use_heavy_compute` (default `false`, passed only with `--vars`).
 
 ---
 
@@ -22,7 +22,7 @@ The layering approach, schemas and warehouses are explained in [SYSTEM_OVERVIEW.
 | D1 | [`manual_book1`](#d1-manual_book1) | seed | table | 7 |
 | D2 | [`manual_book2`](#d2-manual_book2) | seed | table | 5 |
 | 1 | [`stg_public_data__stock_prices`](#1-stg_public_data__stock_prices) | staging | view | 35,013,962 |
-| 2 | [`stg_public_data__fx_rates`](#2-stg_public_data__fx_rates) | staging | view | 764 (382 days × 2) |
+| 2 | [`stg_public_data__fx_rates`](#2-stg_public_data__fx_rates) | staging | view | 774 (387 days × 2) |
 | 3 | [`int_stock_prices_daily`](#3-int_stock_prices_daily) | intermediate | table | 3,890,440 |
 | 4 | [`int_trading_book`](#4-int_trading_book) | intermediate | table | 12 |
 | 5 | [`int_daily_position`](#5-int_daily_position) | intermediate | table | 1,495 |
@@ -34,6 +34,7 @@ The layering approach, schemas and warehouses are explained in [SYSTEM_OVERVIEW.
 | 11 | [`fct_trading_pnl_treasury_view`](#11-fct_trading_pnl_treasury_view) | marts | view | — |
 | T1 | [`assert_trades_on_trading_days`](#t1-assert_trades_on_trading_days) | singular test | — | — |
 | T2 | [`assert_risk_view_shares_sum_to_one`](#t2-assert_risk_view_shares_sum_to_one) | singular test | — | — |
+| U1–U3 | [Unit tests](#unit-tests) | unit tests | — | — |
 
 ### Lineage
 
@@ -178,7 +179,7 @@ Both seeds have the same columns:
   - Downstream: `fct_stock_history`, `int_trading_pnl`.
 - **Key transformations:**
   - Filters to `base_currency_id = 'USD'` and `quote_currency_id` in `var('report_currencies')`. The `IN` list is built by Jinja from the variable, so adding a currency only means editing `dbt_project.yml`.
-  - Filters on `date >= var('start_date')`.
+  - Filters on `date >= start_date − 10 days`. The extra days give the as-of lookups downstream a prior rate for the first trading day, even when `start_date` falls on an ECB holiday on which Nasdaq trades, such as 1 May. Without them, a start date of 2025-05-01 left all 9,824 rows of that day in `fct_stock_history` without an EUR or GBP price, and the build failed.
   - Extracts `provenance:source` and `provenance:rate_type` from the JSON column, giving the publisher (for example `ECB`) and how the rate was produced (for example `Derived Inverse` or `Derived Cross`).
 - **Tests:**
 
@@ -197,11 +198,11 @@ Both seeds have the same columns:
 |---|---|
 | Materialization | `table` (folder default) |
 | Schema | `INTERMEDIATE` |
-| Warehouse | `+snowflake_warehouse` uses `DBT_PROD_HEAVY_WH` when the target is prod and `DBT_DEV_HEAVY_WH` otherwise (both LARGE) |
+| Warehouse | Target default (XSMALL). With `--vars '{use_heavy_compute: true}'`, `+snowflake_warehouse` uses `DBT_PROD_HEAVY_WH` when the target is prod and `DBT_DEV_HEAVY_WH` otherwise (both LARGE) |
 
 **Why tables:** each intermediate model is read by several later models and tests. The stock pivot in particular would be expensive to recompute every time it's queried. Building them as tables means each runs once per build.
 
-**Why the heavy warehouse:** this follows section 21 of the Snowflake quickstart guide. [PERFORMANCE.md](PERFORMANCE.md) shows that at today's data size this setup costs more than it saves. It's kept on purpose, to demonstrate the pattern.
+**Why the heavy warehouse is opt-in:** routing to a LARGE warehouse follows section 21 of the Snowflake quickstart guide. [PERFORMANCE.md](PERFORMANCE.md) shows that at today's data size it costs more than it saves, so it's off by default. It stays available with `use_heavy_compute`, to demonstrate the pattern.
 
 ### 3. `int_stock_prices_daily`
 
@@ -278,7 +279,7 @@ Both seeds have the same columns:
 
   | Column | Meaning |
   |---|---|
-  | `action` | `BUY`, `SELL` or `HOLD` |
+  | `action` | `BUY` or `SELL` by net direction, `MIXED` when same-day buys and sells cancel out, otherwise `HOLD` |
   | `traded_quantity` | Net signed shares traded that day (0 on HOLD days) |
   | `cash_flow` | Net cash that day (0 on HOLD days) |
   | `shares_held` | End-of-day position |
@@ -292,15 +293,16 @@ Both seeds have the same columns:
   3. **`calendar`:** builds a calendar per instrument by joining each position to every `int_stock_prices_daily` row for its ticker on or after `first_trade_date`. A trading day here means any day the stock has a price, so US market holidays are left out automatically.
   4. **Final select:**
      - `LEFT JOIN`s the day's trades onto the calendar.
-     - A day with no trade becomes `HOLD`. Positive net quantity becomes `BUY`, negative becomes `SELL`.
+     - A day with no trade becomes `HOLD`. Positive net quantity becomes `BUY`, negative becomes `SELL`, and zero (a same-day round trip) becomes `MIXED`.
      - `shares_held` is a running total: `SUM(traded_quantity) OVER (PARTITION BY book, trader, instrument, currency ORDER BY position_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`.
 - **Tests:**
 
   | Scope | Test | Rule enforced |
   |---|---|---|
   | model | `dbt_utils.unique_combination_of_columns` on the 5 grain columns | One row per position per day |
-  | `action` | `accepted_values` `[BUY, SELL, HOLD]` | Only known classifications |
+  | `action` | `accepted_values` `[BUY, SELL, HOLD, MIXED]` | Only known classifications |
   | `shares_held` | `not_null`, `dbt_utils.expression_is_true` `>= 0` | **No short positions.** Fails if the blotter sells more shares than were bought. |
+  | — | unit tests **U1**, **U2** | The HOLD calendar, the running share count and the `MIXED` label, against hand-computed fixtures |
 
 ### 6. `int_trading_pnl`
 
@@ -342,6 +344,7 @@ Both seeds have the same columns:
   | `usd_fx_rate` | `not_null` | Every position-day found an FX rate |
   | `market_value` | `not_null` | Every position-day could be valued |
   | `pnl` | `not_null` | PnL is defined for every position-day |
+  | — | unit test **U3** | The as-of FX lookup, rate 1 for USD books, and the market value, cash and PnL arithmetic |
 
 - **Worked example:** Tina M. (Book2, EUR) bought 80 AAPL at €226.57 on 2026-04-15. On 2026-07-02, close = $308.48 and USD/EUR = 0.8773, so `close_price` = €270.6295.
   - `market_value` = 80 × 270.6295 = **21,650.36**
@@ -402,7 +405,8 @@ Marts are what analysts, BI tools and the Snowsight charts query. Their column n
   - **Why incremental:** a PnL fact keeps growing every day, and older days don't change unless trades are rebooked. Each run only processes recent days.
   - **On incremental runs** the source is filtered to `position_date >= MAX(position_date) in {{ this }} − pnl_lookback_days`. That 7-day window is re-merged, so late corrections within a week are picked up. The second run in testing merged 36 rows instead of all 1,495.
   - **On the first run or with `--full-refresh`** it builds the whole table.
-- **Hooks** (guide section 21):
+  - **Schema changes:** `on_schema_change='append_new_columns'` adds new upstream columns to the existing table. Older rows stay NULL in them, so the equality test asks for a full refresh to backfill.
+- **Hooks** (guide section 21), only with `--vars '{use_heavy_compute: true}'`. Without that var they render empty, and dbt skips them.
   - `pre_hook`: `ALTER WAREHOUSE {{ target.warehouse }} SET WAREHOUSE_SIZE = '{{ var('heavy_warehouse_size') }}'`
   - `post_hook`: `... SET WAREHOUSE_SIZE = 'XSMALL'`
 
@@ -416,11 +420,12 @@ Marts are what analysts, BI tools and the Snowsight charts query. Their column n
   | Scope | Test | Rule enforced |
   |---|---|---|
   | model | `dbt_utils.unique_combination_of_columns` on the 4 grain columns | Repeated merges never duplicate a position-day |
+  | model | `dbt_utils.equality` with `int_trading_pnl` | The incremental table hasn't drifted from its fully rebuilt source. Editing or deleting a trade older than the lookback window makes it fail until `--full-refresh` (it found 720 stale rows when one 2025 trade quantity was changed in testing). |
   | `book`, `trader`, `instrument`, `position_date` | `not_null` | The merge key is always complete. A null key never matches in `MERGE`, so a row with one would be inserted again on every run. |
   | `pnl` | `not_null` | Every merged row has a PnL |
 
 - **Known limitations:**
-  - Trades edited more than 7 days back need `--full-refresh`.
+  - Trades edited or deleted more than 7 days back need `--full-refresh`. The equality test makes this impossible to miss, and the daily workflow's `full_refresh` input runs it in production.
   - The unique key leaves out `currency`. That's fine as long as a trader never holds the same instrument in two currencies within one book. If that ever happens, the grain test will fail.
 
 ### 9. `fct_trading_pnl_finance_view`
@@ -498,6 +503,18 @@ Marts are what analysts, BI tools and the Snowsight charts query. Their column n
 
 ---
 
+## Unit tests
+
+Defined in `models/intermediate/_intermediate__unit_tests.yml`. Each one runs a model's SQL against a few hand-written input rows instead of warehouse data, and compares the output with hand-computed rows. `dbt build` runs them before building the model, and `dbt test --select "test_type:unit"` runs them alone.
+
+| # | Model | Scenario checked |
+|---|---|---|
+| U1 | `int_daily_position` | A BUY, a day without trades and a partial SELL give the right `action`, `traded_quantity`, `cash_flow` and `shares_held`. Price days before the first trade and other tickers produce no rows. |
+| U2 | `int_daily_position` | A BUY and a SELL on the same day that cancel out are labelled `MIXED`, leave `shares_held` unchanged and keep the day's net cash. |
+| U3 | `int_trading_pnl` | An EUR book on a day without a published rate uses the previous day's rate, ignoring later rates and other currencies. A USD book uses rate 1. `close_price`, `market_value`, `cumulative_cash` and `pnl` match hand calculations. |
+
+---
+
 ## Test coverage summary
 
 | Model | Tests | What's covered |
@@ -507,14 +524,14 @@ Marts are what analysts, BI tools and the Snowsight charts query. Their column n
 | `stg_public_data__fx_rates` | 2 | Grain uniqueness; rate not null |
 | `int_stock_prices_daily` | 2 | Grain uniqueness; close price not null |
 | `int_trading_book` | 12 + T1 | Completeness, referential integrity, domains, positive amounts, trading days |
-| `int_daily_position` | 4 | Grain uniqueness, valid actions, no short positions |
-| `int_trading_pnl` | 3 | FX rate, market value and PnL not null |
+| `int_daily_position` | 4 + U1, U2 | Grain uniqueness, valid actions, no short positions; HOLD calendar and `MIXED` label |
+| `int_trading_pnl` | 3 + U3 | FX rate, market value and PnL not null; as-of FX lookup and PnL arithmetic |
 | `fct_stock_history` | 6 | Grain uniqueness; key and price columns not null |
-| `fct_trading_pnl` | 6 | Grain uniqueness; merge key and PnL not null |
+| `fct_trading_pnl` | 7 | Grain uniqueness; merge key and PnL not null; no drift from `int_trading_pnl` |
 | `fct_trading_pnl_finance_view` | 3 | Grain uniqueness (one currency per book); totals not null |
 | `fct_trading_pnl_risk_view` | 3 + T2 | Grain uniqueness; valid shares that sum to 100% per book |
 | `fct_trading_pnl_treasury_view` | 2 | Grain uniqueness; balance not null |
-| **Total** | **50** data tests + 2 freshness checks | Matches dbt's count: 63 nodes in `dbt build` = 11 models + 2 seeds + 50 tests |
+| **Total** | **51** data tests + 3 unit tests + 2 freshness checks | Matches dbt's count: 67 nodes in `dbt build` = 11 models + 2 seeds + 51 data tests + 3 unit tests |
 
 **Not covered (deliberately):**
 

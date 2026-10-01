@@ -1,15 +1,7 @@
-Welcome to your new dbt project!
+# dbt_hol
 
-### Using the starter project
+The dbt project behind this repository: staging, intermediate and marts models over Snowflake Public Data (Free), plus the trade-blotter seeds, macros and tests.
 
-Try running the following commands:
-- dbt run
-- dbt test
-
-
-### Resources:
-- Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
-- Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers
-- Join the [chat](https://community.getdbt.com/) on Slack for live discussions and support
-- Find [dbt events](https://events.getdbt.com) near you
-- Check out [the blog](https://blog.getdbt.com/) for the latest news on dbt's development and best practices
+- What the project does and why: [root README](../readme.md)
+- Setup, commands and troubleshooting: [developer guide](../docs/README.md)
+- Every model, its logic and its tests: [models dictionary](../docs/MODELS_DICTIONARY.md)
