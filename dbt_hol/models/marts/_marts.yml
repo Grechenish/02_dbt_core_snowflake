@@ -30,14 +30,51 @@ models:
           arguments:
             combination_of_columns: [book, trader, instrument, position_date]
     columns:
+      # grain columns form the merge key; a null would make the merge insert duplicates
+      - name: book
+        data_tests: [not_null]
+      - name: trader
+        data_tests: [not_null]
+      - name: instrument
+        data_tests: [not_null]
+      - name: position_date
+        data_tests: [not_null]
       - name: pnl
         data_tests: [not_null]
 
   - name: fct_trading_pnl_finance_view
     description: Finance view - daily market value, cumulative cash and PnL per book.
+    data_tests:
+      # one currency per book, so book + date is the grain
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [book, position_date]
+    columns:
+      - name: market_value
+        data_tests: [not_null]
+      - name: pnl
+        data_tests: [not_null]
 
   - name: fct_trading_pnl_risk_view
     description: Risk view - open exposure per trader/instrument and its share of the book.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [book, trader, instrument, position_date]
+    columns:
+      - name: share_of_book
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "between 0 and 1"
 
   - name: fct_trading_pnl_treasury_view
     description: Treasury view - daily cash flows and running cash balance per currency.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [currency, position_date]
+    columns:
+      - name: cash_balance
+        data_tests: [not_null]

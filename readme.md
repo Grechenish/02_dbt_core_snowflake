@@ -46,6 +46,14 @@
 - [DBT Macros](https://courses.getdbt.com/courses/jinja-macros-packages)
 - [DBT Best Practice](https://docs.getdbt.com/guides/legacy/best-practices)
 
+## Project documentation
+- [Developer onboarding guide](docs/README.md): quick start, environment variables, running the pipeline
+- [System architecture overview](docs/SYSTEM_OVERVIEW.md)
+- [Data models dictionary](docs/MODELS_DICTIONARY.md)
+- [Performance validation](docs/PERFORMANCE.md)
+
+
+
 All discussions and weekly meetings will be in the Discord channel - **data-engineering-projects**.
 
 

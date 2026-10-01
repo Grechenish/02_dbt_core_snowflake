@@ -5,6 +5,13 @@ sources:
     description: Snowflake Public Data (Free) marketplace share - Financial & Economic Essentials.
     database: SNOWFLAKE_PUBLIC_DATA_FREE
     schema: PUBLIC_DATA_FREE
+    config:
+      # The free listing runs ~90 days behind by design, so thresholds sit above that lag:
+      # a warning means the feed is slipping, an error means it has most likely stopped.
+      loaded_at_field: "date::timestamp_ntz"
+      freshness:
+        warn_after: {count: 100, period: day}
+        error_after: {count: 150, period: day}
     tables:
       - name: stock_price_timeseries
         description: Daily Nasdaq prices and volumes per ticker, long format (one row per ticker/date/variable).

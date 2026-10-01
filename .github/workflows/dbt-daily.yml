@@ -31,6 +31,18 @@ jobs:
             -v "$PWD/artifacts:/app/dbt_hol/target" \
             dbt-hol build --target prod
 
+      # Runs even if the build failed; marks the run red if the Marketplace feed has stopped updating.
+      - name: Check source freshness (prod)
+        if: always()
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        run: |
+          docker run --rm \
+            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
+            dbt-hol source freshness --target prod
+
       - name: Upload run results
         if: always()
         uses: actions/upload-artifact@v4
