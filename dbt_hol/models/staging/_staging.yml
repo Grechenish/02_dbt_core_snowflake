@@ -2,7 +2,10 @@ version: 2
 
 models:
   - name: stg_public_data__stock_prices
-    description: Stock price variables since var('start_date'), renamed. Still long format.
+    description: >
+      Daily price and volume variables for US-listed securities from Nasdaq trading data, since
+      var('start_date'), with consistent column names. Still in long format: one row per ticker,
+      day and variable. This one date filter controls data volume and cost for everything downstream.
     data_tests:
       # the MAX() pivot downstream would silently hide duplicated source rows
       - dbt_utils.unique_combination_of_columns:
@@ -10,10 +13,19 @@ models:
             combination_of_columns: [ticker, trade_date, variable]
     columns:
       - name: ticker
+        description: "{{ doc('col_ticker') }}"
         data_tests: [not_null]
-      - name: trade_date
-        data_tests: [not_null]
+      - name: asset_class
+        description: "{{ doc('col_asset_class') }}"
+      - name: primary_exchange_code
+        description: Code of the primary listing exchange.
+      - name: primary_exchange_name
+        description: "{{ doc('col_primary_exchange_name') }}"
       - name: variable
+        description: >
+          Which measure the row holds: open, high, low or close price (each also split/dividend
+          adjusted), or Nasdaq volume. An unknown value fails the build, because the pivot downstream
+          would silently drop it.
         data_tests:
           - not_null
           - accepted_values:
@@ -28,13 +40,35 @@ models:
                   - post-market_close
                   - post-market_close_adjusted
                   - nasdaq_volume
+      - name: trade_date
+        description: "{{ doc('col_price_trade_date') }} Renamed from the source column `date`."
+        data_tests: [not_null]
+      - name: value
+        description: The measure's value. Prices are in USD, volume in shares.
 
   - name: stg_public_data__fx_rates
-    description: USD -> report currency daily FX rates since var('start_date').
+    description: >
+      USD -> report currency daily FX rates, starting 10 days before var('start_date') so that
+      as-of lookups always have a prior rate for the first trading day.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [quote_currency, rate_date]
     columns:
+      - name: base_currency
+        description: Always `USD`.
+      - name: quote_currency
+        description: Report currency the rate converts into, one of var('report_currencies').
+      - name: quote_currency_name
+        description: Full name of the quote currency.
+      - name: rate_date
+        description: >
+          Day the rate was published. Rates are missing on some US trading days, such as ECB
+          holidays, so models take the latest rate on or before each day.
       - name: fx_rate
+        description: Units of the quote currency that one US dollar buys, e.g. 0.8773 EUR.
         data_tests: [not_null]
+      - name: rate_source
+        description: Publisher of the rate, from the source's `provenance` JSON, e.g. `ECB`.
+      - name: rate_type
+        description: How the rate was produced, from `provenance`, e.g. `Derived Inverse` or `Derived Cross`.

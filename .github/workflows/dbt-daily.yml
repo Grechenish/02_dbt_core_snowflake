@@ -4,6 +4,14 @@ on:
   schedule:
     - cron: "0 7 * * *"   # every day at 07:00 UTC
   workflow_dispatch:        # allow manual runs from the Actions tab
+    inputs:
+      full_refresh:
+        description: "Rebuild incremental models from scratch (needed after editing or deleting trades older than pnl_lookback_days)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 concurrency:
   group: dbt-prod
@@ -13,8 +21,10 @@ jobs:
   dbt-build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      docs_uploaded: ${{ steps.upload_docs.outcome }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build image
         run: docker build -t dbt-hol .
@@ -24,12 +34,35 @@ jobs:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          FULL_REFRESH: ${{ inputs.full_refresh }}   # empty on scheduled runs
         run: |
           mkdir -p artifacts && chmod 777 artifacts   # container runs as non-root user
+          extra_args=""
+          if [ "$FULL_REFRESH" = "true" ]; then extra_args="--full-refresh"; fi
           docker run --rm \
             -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
             -v "$PWD/artifacts:/app/dbt_hol/target" \
-            dbt-hol build --target prod
+            dbt-hol build --target prod $extra_args
+
+      # Static dbt docs site (lineage graph + catalog) for GitHub Pages, only after a successful build.
+      - name: Generate dbt docs (prod)
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        run: |
+          mkdir -p artifacts/docs && chmod 777 artifacts/docs
+          docker run --rm \
+            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
+            -v "$PWD/artifacts/docs:/app/dbt_hol/target" \
+            dbt-hol docs generate --static --target prod
+          mkdir -p site && cp artifacts/docs/static_index.html site/index.html
+
+      - name: Upload docs site
+        id: upload_docs
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
 
       # Runs even if the build failed; marks the run red if the Marketplace feed has stopped updating.
       - name: Check source freshness (prod)
@@ -39,16 +72,36 @@ jobs:
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
+          mkdir -p artifacts/freshness && chmod 777 artifacts/freshness
           docker run --rm \
             -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
+            -v "$PWD/artifacts/freshness:/app/dbt_hol/target" \
             dbt-hol source freshness --target prod
 
       - name: Upload run results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dbt-run-results
           path: |
             artifacts/run_results.json
             artifacts/manifest.json
+            artifacts/freshness/sources.json
           if-no-files-found: ignore
+
+  # Publishes the docs site whenever it was uploaded, even if the later freshness check failed.
+  # Requires Settings > Pages > Source: "GitHub Actions".
+  deploy-docs:
+    needs: dbt-build
+    if: ${{ !cancelled() && needs.dbt-build.outputs.docs_uploaded == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

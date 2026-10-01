@@ -1,0 +1,76 @@
+version: 2
+
+# Unit tests run a model's SQL against the small fixtures below instead of warehouse data, so each
+# business rule is checked against hand-computed results. `dbt build` runs them before building the
+# model they test. To run only the unit tests: dbt test --select "test_type:unit"
+
+unit_tests:
+  - name: int_daily_position__holds_between_trades_and_tracks_shares
+    description: >
+      A BUY opens the position, trading days without a trade become HOLD rows, and a partial SELL
+      reduces shares_held. Price days before the first trade and other tickers produce no rows.
+    model: int_daily_position
+    given:
+      - input: ref('int_trading_book')
+        rows:
+          - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-02', signed_quantity: 100, cash_flow: -10000}
+          - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-06', signed_quantity: -40, cash_flow: 4400}
+      - input: ref('int_stock_prices_daily')
+        rows:
+          - {ticker: AAPL, trade_date: '2024-12-31'}  # before the first trade: no row
+          - {ticker: AAPL, trade_date: '2025-01-02'}
+          - {ticker: AAPL, trade_date: '2025-01-03'}
+          - {ticker: AAPL, trade_date: '2025-01-06'}
+          - {ticker: MSFT, trade_date: '2025-01-03'}  # another ticker: no row
+    expect:
+      rows:
+        - {book: B1, instrument: AAPL, position_date: '2025-01-02', action: BUY,  traded_quantity: 100, cash_flow: -10000, shares_held: 100}
+        - {book: B1, instrument: AAPL, position_date: '2025-01-03', action: HOLD, traded_quantity: 0,   cash_flow: 0,      shares_held: 100}
+        - {book: B1, instrument: AAPL, position_date: '2025-01-06', action: SELL, traded_quantity: -40, cash_flow: 4400,   shares_held: 60}
+
+  - name: int_daily_position__same_day_round_trip_is_mixed
+    description: >
+      Buys and sells on the same day that cancel out are labelled MIXED. Shares held stay the same,
+      and the day's net cash (the realized result of the round trip) is kept.
+    model: int_daily_position
+    given:
+      - input: ref('int_trading_book')
+        rows:
+          - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-02', signed_quantity: 100, cash_flow: -10000}
+          - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-03', signed_quantity: 50,  cash_flow: -5100}
+          - {book: B1, trader: T1, instrument: AAPL, currency: GBP, trade_date: '2025-01-03', signed_quantity: -50, cash_flow: 5200}
+      - input: ref('int_stock_prices_daily')
+        rows:
+          - {ticker: AAPL, trade_date: '2025-01-02'}
+          - {ticker: AAPL, trade_date: '2025-01-03'}
+    expect:
+      rows:
+        - {position_date: '2025-01-02', action: BUY,   traded_quantity: 100, cash_flow: -10000, shares_held: 100}
+        - {position_date: '2025-01-03', action: MIXED, traded_quantity: 0,   cash_flow: 100,    shares_held: 100}
+
+  - name: int_trading_pnl__marks_to_market_with_latest_fx_rate
+    description: >
+      An EUR book uses the latest USD->EUR rate on or before each day: none is published on
+      2025-01-03, so the 2025-01-02 rate applies, and the later EUR rate and the GBP rate are ignored.
+      A USD book uses a rate of 1. pnl = market value + cumulative cash.
+    model: int_trading_pnl
+    given:
+      - input: ref('int_daily_position')
+        rows:
+          - {book: B2, trader: T2, instrument: AAPL, currency: EUR, position_date: '2025-01-02', action: BUY,  traded_quantity: 10, cash_flow: -900, shares_held: 10}
+          - {book: B2, trader: T2, instrument: AAPL, currency: EUR, position_date: '2025-01-03', action: HOLD, traded_quantity: 0,  cash_flow: 0,    shares_held: 10}
+          - {book: B3, trader: T3, instrument: AAPL, currency: USD, position_date: '2025-01-03', action: BUY,  traded_quantity: 1,  cash_flow: -100, shares_held: 1}
+      - input: ref('int_stock_prices_daily')
+        rows:
+          - {ticker: AAPL, trade_date: '2025-01-02', close_price: 100}
+          - {ticker: AAPL, trade_date: '2025-01-03', close_price: 110}
+      - input: ref('stg_public_data__fx_rates')
+        rows:
+          - {quote_currency: EUR, rate_date: '2025-01-02', fx_rate: 0.9}
+          - {quote_currency: EUR, rate_date: '2025-01-06', fx_rate: 0.95}  # later rate: never used for earlier days
+          - {quote_currency: GBP, rate_date: '2025-01-03', fx_rate: 0.8}   # other currency: ignored
+    expect:
+      rows:
+        - {book: B2, position_date: '2025-01-02', usd_fx_rate: 0.9, close_price: 90,  market_value: 900, cumulative_cash: -900, pnl: 0}
+        - {book: B2, position_date: '2025-01-03', usd_fx_rate: 0.9, close_price: 99,  market_value: 990, cumulative_cash: -900, pnl: 90}
+        - {book: B3, position_date: '2025-01-03', usd_fx_rate: 1,   close_price: 110, market_value: 110, cumulative_cash: -100, pnl: 10}

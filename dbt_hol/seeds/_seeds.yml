@@ -2,13 +2,35 @@ version: 2
 
 seeds:
   - name: manual_book1
-    description: Manually maintained trades of the GBP desk (Book1). Prices are per share in the book currency.
+    description: >
+      Manually maintained trade blotter of the GBP desk (Book1), standing in for an order-management
+      system feed. Prices are per share in the book currency. Every column is validated after the
+      union in int_trading_book, so each rule is written once for all desks.
     config:
       column_types: &book_column_types
         trade_date: date
         quantity: number(38, 0)
         price_per_share: number(18, 4)
+    columns: &book_columns
+      - name: book
+        description: Trading desk / book identifier.
+      - name: trade_date
+        description: Date the trade was executed. Must be a trading day for the instrument.
+      - name: trader
+        description: Trader who booked the trade.
+      - name: instrument
+        description: Stock ticker. Must exist in the price data.
+      - name: action
+        description: "`BUY` or `SELL`."
+      - name: quantity
+        description: Number of shares, always positive. The direction comes from `action`.
+      - name: price_per_share
+        description: Execution price per share in the book currency.
+      - name: currency
+        description: Book currency.
+
   - name: manual_book2
-    description: Manually maintained trades of the EUR desk (Book2). Prices are per share in the book currency.
+    description: Manually maintained trade blotter of the EUR desk (Book2). Same columns and rules as manual_book1.
     config:
       column_types: *book_column_types
+    columns: *book_columns

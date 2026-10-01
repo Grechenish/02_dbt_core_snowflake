@@ -1,5 +1,6 @@
 -- One row per position per trading day from its first trade onwards.
--- Days with a trade are BUY/SELL; every other trading day is a synthetic HOLD row.
+-- Days with a trade are BUY/SELL by net direction (MIXED if buys and sells cancel out);
+-- every other trading day is a synthetic HOLD row.
 with trades as (
     select
         book, trader, instrument, currency, trade_date,
@@ -33,7 +34,8 @@ select
     case
         when trades.traded_quantity is null then 'HOLD'
         when trades.traded_quantity > 0     then 'BUY'
-        else 'SELL'
+        when trades.traded_quantity < 0     then 'SELL'
+        else 'MIXED'  -- same-day buys and sells that net to zero shares
     end                                  as action,
     coalesce(trades.traded_quantity, 0)  as traded_quantity,
     coalesce(trades.cash_flow, 0)        as cash_flow,

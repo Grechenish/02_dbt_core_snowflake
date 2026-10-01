@@ -1,0 +1,6 @@
+# Top-level Python dependencies. requirements.txt is the full lock compiled from this file,
+# so every transitive package is pinned and Docker/CI builds are reproducible. To upgrade:
+#   pip install uv
+#   uv pip compile requirements.in --universal --python-version 3.14 -o requirements.txt
+dbt-core==1.12.5
+dbt-snowflake==1.12.1

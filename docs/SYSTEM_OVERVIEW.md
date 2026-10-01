@@ -18,6 +18,8 @@ The pipeline turns public market data from the Snowflake Marketplace into daily 
 | Source data | Snowflake Public Data (Free) Marketplace share | `SNOWFLAKE_PUBLIC_DATA_FREE` |
 | Runtime image | Docker (`python:3.14-slim`) | `Dockerfile` |
 | Scheduler | GitHub Actions, daily at 07:00 UTC | `.github/workflows/dbt-daily.yml` |
+| Pull-request checks | GitHub Actions: image build + `dbt --warn-error parse`, no credentials needed | `.github/workflows/ci.yml` |
+| Docs site | dbt docs on GitHub Pages, republished after each successful daily build | `.github/workflows/dbt-daily.yml` |
 | Local development | Python virtual environment | `.venv/`, `requirements.txt` |
 
 ```mermaid
@@ -55,9 +57,12 @@ Which environment a run uses is controlled only by the dbt `--target` flag. The 
 
 | File | Role |
 |---|---|
-| `Dockerfile` | Builds the runtime image: Python, pinned dbt, the project, and its dbt packages. |
+| `Dockerfile` | Builds the runtime image: Python, the locked dependencies, the project, and its dbt packages. |
 | `.dockerignore` | Keeps local and secret files out of the build context. |
-| `.github/workflows/dbt-daily.yml` | Builds the image and runs it on a schedule. |
+| `requirements.in` / `requirements.txt` | Top-level Python dependencies, and the full lock compiled from them with uv. |
+| `.github/workflows/dbt-daily.yml` | Builds the image, runs it on a schedule, and publishes the dbt docs site. |
+| `.github/workflows/ci.yml` | Builds the image and parses the project on every pull request and push to main. |
+| `.github/dependabot.yml` | Opens weekly pull requests that keep the workflow actions current. |
 | `dbt_hol/profiles.yml` | Connection profile. It reads every credential from environment variables. |
 
 > **There is no docker-compose setup.** The pipeline is a single short-lived container that connects to a managed warehouse, with no companion services such as a database, scheduler or API. A plain `docker run` is all that's needed.
@@ -71,12 +76,12 @@ The `Dockerfile` builds the image in this order:
    - `PYTHONUNBUFFERED=1` streams dbt logs to the CI console as they happen.
    - `PIP_NO_CACHE_DIR=1` keeps the image small.
    - `DBT_PROFILES_DIR=/app/dbt_hol` tells dbt to use the `profiles.yml` stored in the project, rather than `~/.dbt`.
-3. **Dependencies:** it copies `requirements.txt` and runs `pip install` before copying the project. Because of this order, Docker reuses the cached dependency layer whenever only SQL or YAML files change.
+3. **Dependencies:** it copies `requirements.txt` and runs `pip install` before copying the project. Because of this order, Docker reuses the cached dependency layer whenever only SQL or YAML files change. `requirements.txt` is a lock file that pins every transitive package, so each daily rebuild installs exactly the versions that were tested.
 4. **Project and packages:** it copies `dbt_hol/` and runs `dbt deps` at build time, so dbt_utils is part of the image. At runtime, the only network access needed is to Snowflake.
 5. **Non-root user:** it creates a user named `dbt`, gives it ownership of `/app`, and switches to it. dbt writes `target/` and `logs/` inside the project folder, which is why the user needs that ownership.
 6. **Entrypoint:**
    - `ENTRYPOINT ["dbt"]` makes the container behave like the `dbt` command.
-   - `CMD ["build", "--target", "prod"]` is the default command.
+   - `CMD ["build", "--target", "dev"]` is the default command, so a bare `docker run` never touches production.
    - Any arguments passed to `docker run` replace `CMD`. For example, `docker run ... dbt-hol debug` runs `dbt debug`.
 
 `.dockerignore` excludes:
@@ -116,13 +121,15 @@ The role, warehouse, database and default schema for each environment are writte
 
 | Setting | Value |
 |---|---|
-| Triggers | `schedule: "0 7 * * *"` (daily at 07:00 UTC) and `workflow_dispatch` (the manual "Run workflow" button) |
+| Triggers | `schedule: "0 7 * * *"` (daily at 07:00 UTC) and `workflow_dispatch` (the manual "Run workflow" button, with a `full_refresh` checkbox) |
 | Concurrency | The group `dbt-prod` with `cancel-in-progress: false`, so two production runs never overlap. A second run waits for the first to finish. |
+| Permissions | The token is read-only (`contents: read`). Only the Pages deploy job gets `pages: write` and `id-token: write`. |
+| Secrets | Passed only to the three steps that run dbt, never to the third-party actions. |
 | Timeout | 30 minutes |
 
-The job runs these steps:
+The `dbt-build` job runs these steps:
 
-1. `actions/checkout@v4`.
+1. `actions/checkout@v7`.
 2. `docker build -t dbt-hol .`
 3. Runs the container. The three Snowflake secrets are passed as environment variables, and the container's `target/` folder is mounted to the runner's `./artifacts` folder:
    ```bash
@@ -131,16 +138,21 @@ The job runs these steps:
      -v "$PWD/artifacts:/app/dbt_hol/target" \
      dbt-hol build --target prod
    ```
-   The `artifacts` folder is made world-writable (`chmod 777`) first, because the container runs as the non-root `dbt` user.
-4. Runs `dbt source freshness --target prod` in a second container, even if the build failed (`if: always()`). If the Marketplace feed has stopped updating, this step marks the run as failed. It doesn't stop the models from being refreshed. Thresholds are described in [MODELS_DICTIONARY.md](MODELS_DICTIONARY.md#sources).
-5. Uploads `run_results.json` and `manifest.json` as the `dbt-run-results` artifact. This step also runs if earlier steps fail (`if: always()`), so every run can be inspected afterwards.
+   The `artifacts` folder is made world-writable (`chmod 777`) first, because the container runs as the non-root `dbt` user. When a manual run ticks `full_refresh`, `--full-refresh` is added, which rebuilds the incremental `fct_trading_pnl` from scratch.
+4. Only after a successful build: runs `dbt docs generate --static --target prod` and uploads the single-file site (`static_index.html`, renamed `index.html`) as the GitHub Pages artifact.
+5. Runs `dbt source freshness --target prod` in another container, even if the build failed (`if: always()`). If the Marketplace feed has stopped updating, this step marks the run as failed. It doesn't stop the models from being refreshed. Thresholds are described in [MODELS_DICTIONARY.md](MODELS_DICTIONARY.md#sources).
+6. Uploads `run_results.json`, `manifest.json` and `freshness/sources.json` as the `dbt-run-results` artifact. This step also runs if earlier steps fail (`if: always()`), so every run can be inspected afterwards.
+
+A second job, `deploy-docs`, publishes the docs site to GitHub Pages whenever step 4 uploaded it, even if the freshness check failed afterwards. It needs **Settings → Pages → Source: GitHub Actions** to be enabled once.
+
+**On pull requests and pushes to main** (`ci.yml`), a separate workflow builds the image and runs `dbt --warn-error parse` with placeholder credentials. `dbt parse` renders every model, test and config without connecting to Snowflake, so this check needs no secrets and also works for pull requests from forks.
 
 **Locally** (with Docker Desktop installed):
 
 ```bash
 docker build -t dbt-hol .
-docker run --rm --env-file .env dbt-hol                     # dbt build --target prod
-docker run --rm --env-file .env dbt-hol build --target dev  # any dbt command works
+docker run --rm --env-file .env dbt-hol                      # dbt build --target dev (the default)
+docker run --rm --env-file .env dbt-hol debug --target dev   # any dbt command works
 ```
 
 `dbt build` runs seeds, models, snapshots and tests in dependency order. If a test fails, dbt skips the models that depend on the failing model, so bad data doesn't spread further.
@@ -166,7 +178,7 @@ These objects are created by hand, once, by an `ACCOUNTADMIN` (the bootstrap scr
 |---|---|---|
 | Role | `DBT_DEV_ROLE` | `DBT_PROD_ROLE` |
 | Default warehouse | `DBT_DEV_WH` (XSMALL) | `DBT_PROD_WH` (XSMALL) |
-| Heavy warehouse | `DBT_DEV_HEAVY_WH` (LARGE) | `DBT_PROD_HEAVY_WH` (LARGE) |
+| Heavy warehouse (opt-in) | `DBT_DEV_HEAVY_WH` (LARGE) | `DBT_PROD_HEAVY_WH` (LARGE) |
 | Target database | `DBT_HOL_DEV` | `DBT_HOL_PROD` |
 | Default schema | `PUBLIC` (unused, see 3.3) | `PUBLIC` (unused) |
 | Threads | 4 | 4 |
@@ -175,11 +187,14 @@ All four warehouses have `AUTO_SUSPEND = 60`, `AUTO_RESUME = TRUE` and `INITIALL
 
 **Which warehouse each model uses:**
 
-- **Intermediate models** run on the heavy warehouse. They set `+snowflake_warehouse` in `dbt_project.yml`, and the warehouse is picked from `target.name`: `DBT_PROD_HEAVY_WH` for prod, `DBT_DEV_HEAVY_WH` otherwise.
-- **All other models and tests** run on the target's default warehouse.
-- **`fct_trading_pnl`** also has hooks around its run:
+By default, every model and test runs on the target's default XSMALL warehouse. Passing `--vars '{use_heavy_compute: true}'` turns on the quickstart's heavy-compute pattern:
+
+- **Intermediate models** run on the heavy warehouse. `+snowflake_warehouse` in `dbt_project.yml` picks it from `target.name`: `DBT_PROD_HEAVY_WH` for prod, `DBT_DEV_HEAVY_WH` otherwise. With the var off, it resolves to the target's own warehouse, which is a no-op.
+- **`fct_trading_pnl`** gets hooks around its run:
   - A pre-hook resizes the default warehouse to `var('heavy_warehouse_size')`, which defaults to `SMALL`.
   - A post-hook sets it back to `XSMALL`.
+
+The pattern is off by default because [PERFORMANCE.md](PERFORMANCE.md) measured that, at this data size, it costs most of each run to save about 4 seconds. `use_heavy_compute` is a command-line var on purpose. Configs in `dbt_project.yml` can only read vars passed with `--vars`, so defining it there would turn the hooks on without the warehouse routing.
 
 ### 3.3 Schemas created by dbt
 
@@ -234,7 +249,7 @@ CREATE WAREHOUSE IF NOT EXISTS dbt_dev_heavy_wh  WITH WAREHOUSE_SIZE = 'LARGE'  
 CREATE WAREHOUSE IF NOT EXISTS dbt_prod_wh       WITH WAREHOUSE_SIZE = 'XSMALL' AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE;
 CREATE WAREHOUSE IF NOT EXISTS dbt_prod_heavy_wh WITH WAREHOUSE_SIZE = 'LARGE'  AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE;
 
--- ALL includes MODIFY, which the fct_trading_pnl resize hooks need
+-- ALL includes MODIFY, which the optional fct_trading_pnl resize hooks need (use_heavy_compute)
 GRANT ALL ON WAREHOUSE dbt_dev_wh        TO ROLE dbt_dev_role;
 GRANT ALL ON WAREHOUSE dbt_dev_heavy_wh  TO ROLE dbt_dev_role;
 GRANT ALL ON WAREHOUSE dbt_prod_wh       TO ROLE dbt_prod_role;
@@ -270,7 +285,7 @@ flowchart LR
         st1[stg_public_data__stock_prices]
         st2[stg_public_data__fx_rates]
     end
-    subgraph INT["intermediate (tables, heavy warehouse)"]
+    subgraph INT["intermediate (tables)"]
         i1[int_stock_prices_daily]
         i2[int_trading_book]
         i3[int_daily_position]
@@ -308,7 +323,7 @@ The `i1 --> i2` edge is a test dependency only: the `relationships` test on `int
 | **Sources** | `models/staging/_sources.yml` | n/a | Declares the Marketplace views as dbt sources. | Only staging models may call `source()`. |
 | **Seeds** | `seeds/` | table in `SEEDS` | Small, manually maintained reference data (the trading desks' trades). | Version-controlled CSVs. Column types are fixed in `_seeds.yml`. |
 | **Staging** | `models/staging/` | view | One model per source object. Renames columns, filters to the load window and the needed currencies. | No joins and no aggregation. Views add no storage and always show current source data. |
-| **Intermediate** | `models/intermediate/` | table on the heavy warehouse | Business logic: pivoting, unions, building the daily position calendar, marking positions to market. | Built as tables, because several models and tests read each one and the pivot is expensive to repeat. |
+| **Intermediate** | `models/intermediate/` | table | Business logic: pivoting, unions, building the daily position calendar, marking positions to market. | Built as tables, because several models and tests read each one and the pivot is expensive to repeat. The position and PnL logic is covered by unit tests. |
 | **Marts** | `models/marts/` | table (`fct_trading_pnl` is incremental, the department models are views) | Consumer-facing facts and departmental views. | Stable column names and grain. This is what BI tools and analysts query. |
 
 Naming conventions:
@@ -324,7 +339,8 @@ Naming conventions:
 | `start_date` | `'2025-01-01'` | Lower date bound applied in staging. Controls data volume and cost. |
 | `report_currencies` | `['EUR', 'GBP']` | Currencies loaded from FX staging. `fct_stock_history` gets a column pair for each one. |
 | `pnl_lookback_days` | `7` | How many trailing days `fct_trading_pnl` re-merges on each incremental run. |
-| `heavy_warehouse_size` | `'SMALL'` | Size the `fct_trading_pnl` pre-hook resizes the warehouse to. The original guide uses `XXLARGE`. |
+| `heavy_warehouse_size` | `'SMALL'` | With `use_heavy_compute`, the size the `fct_trading_pnl` pre-hook resizes the warehouse to. The original guide uses `XXLARGE`. |
+| `use_heavy_compute` | `false`, command line only | `true` routes intermediate models to the LARGE heavy warehouses and turns on the `fct_trading_pnl` resize hooks (section 3.2). It isn't defined in `dbt_project.yml`, because configs there can only read vars passed with `--vars`. |
 
 Override a variable for a single run with `--vars`:
 
@@ -348,8 +364,13 @@ dbt build --vars '{start_date: "2024-01-01"}'
 - `union_relations` in `int_trading_book`
 - `unique_combination_of_columns` for grain tests
 - `expression_is_true` for range checks
+- `equality` to check that the incremental `fct_trading_pnl` still matches its source
 
 `package-lock.yml` pins the resolved version, 1.4.1.
+
+**Unit tests.** `models/intermediate/_intermediate__unit_tests.yml` runs `int_daily_position` and `int_trading_pnl` against small hand-written fixtures. They check the HOLD calendar, the share count, the `MIXED` label for same-day round trips, the as-of FX lookup and the PnL arithmetic. `dbt build` runs them before building those models.
+
+**Column documentation.** Every model and seed column has a description. Descriptions shared by several models are doc blocks in `models/_column_docs.md`, referenced with `{{ doc('col_...') }}`, so a column means the same thing everywhere.
 
 ### 4.4 Execution order and failure behaviour
 
@@ -362,8 +383,8 @@ For example, two source rows once had a volume but no prices. When they reached 
 ## 5. Operational notes and known limitations
 
 - **Source lag:** the free listing ends about three months before today. Date windows come from `var('start_date')` and never from `current_date`, so "recent" filters don't come back empty.
-- **Incremental fact and historical edits:** `fct_trading_pnl` only re-merges the last `pnl_lookback_days` days. After editing an older trade in a seed CSV, rebuild it once with `dbt build --full-refresh -s fct_trading_pnl`.
-- **Warehouse resize hooks:** the post-hook that resets the warehouse to `XSMALL` only runs if `fct_trading_pnl` succeeds. If that model fails, the default warehouse stays at `heavy_warehouse_size` until the next successful run or a manual `ALTER WAREHOUSE`.
-- **Heavy warehouse cost:** every run resumes a LARGE warehouse for the intermediate layer, which bills at least 60 seconds at 8 credits per hour. Remove `+snowflake_warehouse` in `dbt_project.yml` to keep everything on XSMALL. Measurements and a cost comparison are in [PERFORMANCE.md](PERFORMANCE.md).
+- **Incremental fact and historical edits:** `fct_trading_pnl` only re-merges the last `pnl_lookback_days` days, and a merge never deletes rows. After editing or deleting an older trade in a seed CSV, rebuild it once with `dbt build --full-refresh -s fct_trading_pnl`. Until then, its equality test against `int_trading_pnl` fails the build. In production, use the workflow's `full_refresh` input. New upstream columns are appended automatically (`on_schema_change='append_new_columns'`), and the equality test then asks for a full refresh to backfill them.
+- **Warehouse resize hooks (only with `use_heavy_compute`):** the post-hook that resets the warehouse to `XSMALL` only runs if `fct_trading_pnl` succeeds. If that model fails, the default warehouse stays at `heavy_warehouse_size` until the next successful run or a manual `ALTER WAREHOUSE`.
+- **Heavy warehouse cost (only with `use_heavy_compute`):** each run resumes a LARGE warehouse for the intermediate layer, which bills at least 60 seconds at 8 credits per hour. That's why the pattern is off by default. Measurements and a cost comparison are in [PERFORMANCE.md](PERFORMANCE.md).
 - **Authentication:** `DBT_USER` signs in with a password. Snowflake is phasing out single-factor password sign-ins, so plan to move to key-pair authentication (`private_key_path` / `private_key` in `profiles.yml`) before that applies to this account.
 - **Secrets:** credentials live only in GitHub repository secrets, a local `.env` (git-ignored and excluded from Docker builds) or user environment variables. They never appear in the image, `profiles.yml`, or git history.

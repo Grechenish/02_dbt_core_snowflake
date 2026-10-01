@@ -2,26 +2,53 @@ version: 2
 
 models:
   - name: int_stock_prices_daily
-    description: One row per ticker per trading day with OHLC prices (USD) and volume.
+    description: >
+      One row per ticker per trading day with open, high, low and close prices in USD plus volume,
+      pivoted from the long staging format. Rows with a volume but no prices are dropped.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [ticker, trade_date]
     columns:
+      - name: ticker
+        description: "{{ doc('col_ticker') }}"
+      - name: trade_date
+        description: "{{ doc('col_price_trade_date') }}"
+      - name: asset_class
+        description: "{{ doc('col_asset_class') }}"
+      - name: primary_exchange_name
+        description: "{{ doc('col_primary_exchange_name') }}"
+      - name: open_price
+        description: "{{ doc('col_open_price') }}"
+      - name: high_price
+        description: "{{ doc('col_high_price') }}"
+      - name: low_price
+        description: "{{ doc('col_low_price') }}"
       - name: close_price
+        description: "{{ doc('col_close_price_usd') }}"
         data_tests: [not_null]
+      - name: close_price_adjusted
+        description: Close price in USD adjusted for splits and dividends (source variable `post-market_close_adjusted`).
+      - name: volume
+        description: "{{ doc('col_volume') }}"
 
   - name: int_trading_book
-    description: Trades of all desks (union of the manual_book seeds) with signed quantity and cash flow.
+    description: >
+      Trades of all desks (union of the manual_book seeds by column name) with the direction turned
+      into a signed quantity and a cash flow. One row per trade; there is no natural key, because two
+      identical trades on the same day are valid.
     columns:
       - name: book
+        description: "{{ doc('col_book') }}"
         data_tests: [not_null]
       - name: trade_date
+        description: Date the trade was executed. It must be a trading day for the instrument (test assert_trades_on_trading_days).
         data_tests: [not_null]
       - name: trader
+        description: "{{ doc('col_trader') }}"
         data_tests: [not_null]
       - name: instrument
-        description: Stock ticker; must exist in the stock price history.
+        description: "{{ doc('col_instrument') }}"
         data_tests:
           - not_null
           - relationships:
@@ -29,43 +56,70 @@ models:
                 to: ref('int_stock_prices_daily')
                 field: ticker
       - name: action
+        description: Trade direction, `BUY` or `SELL`, upper-cased from the seed.
         data_tests:
           - accepted_values:
               arguments:
                 values: [BUY, SELL]
       - name: quantity
+        description: Number of shares traded. Always positive; the direction comes from `action`.
         data_tests:
           - not_null
           - dbt_utils.expression_is_true:
               arguments:
                 expression: "> 0"
+      - name: signed_quantity
+        description: "`+quantity` for a BUY and `-quantity` for a SELL."
       - name: price_per_share
+        description: Execution price per share in the book currency.
         data_tests:
           - not_null
           - dbt_utils.expression_is_true:
               arguments:
                 expression: "> 0"
       - name: currency
+        description: "{{ doc('col_currency') }}"
         data_tests:
           - not_null
           - accepted_values:
               arguments:
                 values: [USD, EUR, GBP]
+      - name: cash_flow
+        description: >
+          Cash moved by the trade in the book currency: `-signed_quantity × price_per_share`, so
+          negative when buying (cash leaves the book) and positive when selling.
 
   - name: int_daily_position
-    description: One row per position (book/trader/instrument/currency) per trading day since its first trade; non-trade days are HOLD.
+    description: >
+      One row per position (book / trader / instrument / currency) per trading day from its first
+      trade onwards, so every position can be valued every day. Days without a trade are HOLD rows.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [book, trader, instrument, currency, position_date]
     columns:
+      - name: book
+        description: "{{ doc('col_book') }}"
+      - name: trader
+        description: "{{ doc('col_trader') }}"
+      - name: instrument
+        description: "{{ doc('col_instrument') }}"
+      - name: currency
+        description: "{{ doc('col_currency') }}"
+      - name: position_date
+        description: "{{ doc('col_position_date') }}"
       - name: action
+        description: "{{ doc('col_action') }}"
         data_tests:
           - accepted_values:
               arguments:
-                values: [BUY, SELL, HOLD]
+                values: [BUY, SELL, HOLD, MIXED]
+      - name: traded_quantity
+        description: "{{ doc('col_traded_quantity') }}"
+      - name: cash_flow
+        description: "{{ doc('col_daily_cash_flow') }}"
       - name: shares_held
-        description: Running share count; a negative value would mean selling more than was bought.
+        description: "{{ doc('col_shares_held') }} A negative value would mean selling more than was bought."
         data_tests:
           - not_null
           - dbt_utils.expression_is_true:
@@ -73,11 +127,40 @@ models:
                 expression: ">= 0"
 
   - name: int_trading_pnl
-    description: Daily positions marked to market in the book currency, with cumulative cash and PnL.
+    description: >
+      Daily positions marked to market in the book currency, with cumulative cash and PnL.
+      FX uses the latest rate on or before each day (ASOF JOIN), because rates aren't published on every trading day.
     columns:
+      - name: book
+        description: "{{ doc('col_book') }}"
+      - name: trader
+        description: "{{ doc('col_trader') }}"
+      - name: instrument
+        description: "{{ doc('col_instrument') }}"
+      - name: currency
+        description: "{{ doc('col_currency') }}"
+      - name: position_date
+        description: "{{ doc('col_position_date') }}"
+      - name: action
+        description: "{{ doc('col_action') }}"
+      - name: traded_quantity
+        description: "{{ doc('col_traded_quantity') }}"
+      - name: cash_flow
+        description: "{{ doc('col_daily_cash_flow') }}"
+      - name: shares_held
+        description: "{{ doc('col_shares_held') }}"
+      - name: close_price_usd
+        description: "{{ doc('col_close_price_usd') }}"
       - name: usd_fx_rate
+        description: "{{ doc('col_usd_fx_rate') }}"
         data_tests: [not_null]
+      - name: close_price
+        description: "{{ doc('col_close_price_book') }}"
       - name: market_value
+        description: "{{ doc('col_market_value') }}"
         data_tests: [not_null]
+      - name: cumulative_cash
+        description: "{{ doc('col_cumulative_cash') }}"
       - name: pnl
+        description: "{{ doc('col_pnl') }}"
         data_tests: [not_null]
