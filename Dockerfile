@@ -1,7 +1,6 @@
-# dbt Core + Snowflake runner image.
-# Credentials are NOT baked in: pass SNOWFLAKE_ACCOUNT / SNOWFLAKE_USER / SNOWFLAKE_PASSWORD at runtime
-# (e.g. `docker run --env-file .env trading-pnl`, which builds the dev target).
-# Production only runs when `--target prod` is passed explicitly, as the scheduled workflow does.
+# dbt Core + Snowflake runner image, used by every GitHub Actions workflow.
+# Credentials are NOT baked in: pass SNOWFLAKE_ACCOUNT and SNOWFLAKE_PRIVATE_KEY at runtime, and pick
+# the environment explicitly with --target ci or --target prod.
 FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,5 +23,5 @@ RUN useradd --create-home dbt && chown -R dbt:dbt /app
 USER dbt
 
 ENTRYPOINT ["dbt"]
-# Safe default: a bare `docker run trading-pnl` builds dev, never production.
-CMD ["build", "--target", "dev"]
+# A bare `docker run trading-pnl` only prints the version: every real run names its command and target.
+CMD ["--version"]

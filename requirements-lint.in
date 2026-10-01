@@ -1,0 +1,3 @@
+# SQL linter for CI. Kept apart from requirements.txt because sqlfluff pins an older click than dbt.
+#   uv pip compile requirements-lint.in --universal --python-version 3.14 -o requirements-lint.txt
+sqlfluff==4.3.0
