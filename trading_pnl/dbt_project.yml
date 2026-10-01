@@ -15,14 +15,12 @@ clean-targets:
 vars:
   start_date: '2025-01-01'          # how far back to load source data
   report_currencies: ['EUR', 'GBP'] # USD prices are converted into these
-  pnl_lookback_days: 7              # fct_trading_pnl re-merges this many days on incremental runs
-  heavy_warehouse_size: 'SMALL'     # with use_heavy_compute, the fct_trading_pnl pre-hook scales the target warehouse to this (guide uses XXLARGE)
-  # use_heavy_compute (default false) is deliberately NOT defined here. Configs in this file can only read
-  # vars passed on the command line, so passing it there keeps the warehouse routing and the hooks in sync:
-  #   dbt build --vars '{use_heavy_compute: true}'
-  # It routes intermediate models to the LARGE *_heavy_wh warehouses and turns on the fct_trading_pnl
-  # resize hooks. Off by default because docs/PERFORMANCE.md measured that it costs most of each run
-  # to save a few seconds at this data size.
+  # Days of market data the incremental models re-read and re-merge on every run, counted back from the
+  # newest day already loaded. Provisional value: see docs/decisions.md ("Lookback window") for the
+  # reasoning, and analyses/market_data_restatement_depth.sql for how to measure the real figure.
+  market_data_lookback_days: 30
+  # How far back the restatement check compares the stored prices with the source.
+  restatement_check_days: 90
 
 seeds:
   trading_pnl:
@@ -36,9 +34,6 @@ models:
     intermediate:
       +schema: intermediate
       +materialized: table
-      # with use_heavy_compute, heavy pivots/joins run on the LARGE warehouse of the current environment;
-      # otherwise this resolves to the target's own warehouse, which is a no-op
-      +snowflake_warehouse: "{{ ('dbt_prod_heavy_wh' if target.name == 'prod' else 'dbt_dev_heavy_wh') if var('use_heavy_compute', false) else target.warehouse }}"
     marts:
       +schema: marts
       +materialized: table

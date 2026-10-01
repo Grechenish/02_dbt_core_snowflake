@@ -4,7 +4,10 @@ models:
   - name: int_stock_prices_daily
     description: >
       One row per ticker per trading day with open, high, low and close prices in USD plus volume,
-      pivoted from the long staging format. Rows with a volume but no prices are dropped.
+      pivoted from the long staging format. Incremental: each run re-pivots and merges the last
+      var('market_data_lookback_days') days. Only unadjusted prices are kept. The provider's adjusted
+      prices are rewritten for the whole history after every split or dividend, which a lookback
+      window can never pick up, so storing them incrementally would leave old rows silently wrong.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -27,8 +30,6 @@ models:
       - name: close_price
         description: "{{ doc('col_close_price_usd') }}"
         data_tests: [not_null]
-      - name: close_price_adjusted
-        description: Close price in USD adjusted for splits and dividends (source variable `post-market_close_adjusted`).
       - name: volume
         description: "{{ doc('col_volume') }}"
 

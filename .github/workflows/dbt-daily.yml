@@ -6,7 +6,7 @@ on:
   workflow_dispatch:        # allow manual runs from the Actions tab
     inputs:
       full_refresh:
-        description: "Rebuild incremental models from scratch (needed after editing or deleting trades older than pnl_lookback_days)"
+        description: "Rebuild the incremental market-data models from scratch (needed after a restatement older than market_data_lookback_days)"
         type: boolean
         default: false
 
