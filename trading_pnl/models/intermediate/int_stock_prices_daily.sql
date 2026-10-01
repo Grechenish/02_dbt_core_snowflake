@@ -18,22 +18,23 @@ with prices as (
     select *
     from {{ ref('stg_public_data__stock_prices') }}
     {% if is_incremental() %}
-    where trade_date >= (
-        select dateadd(day, -{{ var('market_data_lookback_days') }}, max(trade_date)) from {{ this }}
-    )
+        where trade_date >= (
+                select dateadd(day, -{{ var('market_data_lookback_days') }}, max(stored.trade_date))
+                from {{ this }} as stored
+            )
     {% endif %}
 )
 
 select
     ticker,
     trade_date,
-    any_value(asset_class)            as asset_class,
-    any_value(primary_exchange_name)  as primary_exchange_name,
-    max(case when variable = 'pre-market_open'    then value end) as open_price,
-    max(case when variable = 'all-day_high'       then value end) as high_price,
-    max(case when variable = 'all-day_low'        then value end) as low_price,
-    max(case when variable = 'post-market_close'  then value end) as close_price,
-    max(case when variable = 'nasdaq_volume'      then value end)::number(38, 0) as volume
+    any_value(asset_class)                                                  as asset_class,
+    any_value(primary_exchange_name)                                        as primary_exchange_name,
+    max(case when variable = 'pre-market_open' then value end)              as open_price,
+    max(case when variable = 'all-day_high' then value end)                 as high_price,
+    max(case when variable = 'all-day_low' then value end)                  as low_price,
+    max(case when variable = 'post-market_close' then value end)            as close_price,
+    max(case when variable = 'nasdaq_volume' then value end)::number(38, 0) as volume
 from prices
 group by ticker, trade_date
 -- Rows without a close are kept, not filtered out. The source has a handful of volume-only rows

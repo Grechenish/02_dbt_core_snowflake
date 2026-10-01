@@ -7,7 +7,8 @@ select
     version,
     count(distinct hash(status, book, trader, instrument, side, quantity, price, currency, trade_date, booked_at))
         as distinct_contents,
-    array_agg(distinct _source_file) as files
+    array_agg(distinct _source_file)
+        as files
 from {{ source('raw_trades', 'trades') }}
 group by trade_id, version
 having distinct_contents > 1

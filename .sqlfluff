@@ -10,7 +10,8 @@ max_line_length = 120
 #   ST06 (column order): columns follow the grain first, then the measures, not wildcard/simple/calc order.
 #   RF04 (keywords as identifiers): the source's own columns are called `date`, `value` and `variable`.
 #   LT09 (one select target per line): short selects such as `select book, max(x)` read better on one line.
-exclude_rules = AM04, ST06, RF04, LT09
+#   ST05 (subqueries): a one-line scalar subquery (e.g. the incremental cutoff) reads better inline than as a CTE.
+exclude_rules = AM04, ST06, RF04, LT09, ST05
 
 [sqlfluff:templater:jinja]
 apply_dbt_builtins = True
@@ -21,7 +22,7 @@ report_currencies = ['EUR', 'GBP']
 
 [sqlfluff:indentation]
 tab_space_size = 4
-allow_implicit_indents = True
+implicit_indents = allow
 
 [sqlfluff:rules:capitalisation.keywords]
 capitalisation_policy = lower

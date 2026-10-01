@@ -4,5 +4,5 @@
 select trades.trade_id, trades.book, trades.currency, books.base_currency
 from {{ ref('int_trades_current') }} as trades
 inner join {{ ref('books') }} as books
-    on books.book = trades.book
+    on trades.book = books.book
 where trades.currency <> books.base_currency

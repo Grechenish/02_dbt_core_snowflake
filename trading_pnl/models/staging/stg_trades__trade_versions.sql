@@ -9,18 +9,18 @@ with raw_rows as (
 
 typed as (
     select
-        trim(trade_id)                                                       as trade_id,
-        try_to_number(version)                                               as version,
-        upper(trim(status))                                                  as status,
-        trim(book)                                                           as book,
-        trim(trader)                                                         as trader,
-        upper(trim(instrument))                                              as instrument,
-        upper(trim(side))                                                    as side,
-        try_to_number(quantity, 18, 0)                                       as quantity,
-        try_to_number(price, 18, 6)                                          as price,
-        upper(trim(currency))                                                as currency,
-        try_to_date(trade_date)                                              as trade_date,
-        convert_timezone('UTC', try_to_timestamp_tz(booked_at))::timestamp_ntz  as booked_at_utc,
+        trim(trade_id)                                                         as trade_id,
+        try_to_number(version)                                                 as version,
+        upper(trim(status))                                                    as status,
+        trim(book)                                                             as book,
+        trim(trader)                                                           as trader,
+        upper(trim(instrument))                                                as instrument,
+        upper(trim(side))                                                      as side,
+        try_to_number(quantity, 18, 0)                                         as quantity,
+        try_to_number(price, 18, 6)                                            as price,
+        upper(trim(currency))                                                  as currency,
+        try_to_date(trade_date)                                                as trade_date,
+        convert_timezone('UTC', try_to_timestamp_tz(booked_at))::timestamp_ntz as booked_at_utc,
         _source_file,
         _source_row_number,
         _load_run_id,
@@ -30,9 +30,9 @@ typed as (
 
 select
     *,
-    count(*) over (partition by trade_id, version)  as times_loaded
+    count(*) over (partition by trade_id, version) as times_loaded
 from typed
 qualify row_number() over (
-    partition by trade_id, version
-    order by _loaded_at, _source_file, _source_row_number
-) = 1
+        partition by trade_id, version
+        order by _loaded_at, _source_file, _source_row_number
+    ) = 1
