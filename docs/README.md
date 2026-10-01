@@ -1,4 +1,4 @@
-# Developer Onboarding Guide: dbt_hol
+# Developer Onboarding Guide: trading_pnl
 
 This guide gets you from a fresh clone to a working pipeline run, then covers the commands you'll use day to day.
 
@@ -31,8 +31,8 @@ Run these from the repository root.
 **1. Clone the repository:**
 
 ```bash
-git clone git@github.com:Grechenish/02_dbt_core_snowflake.git
-cd 02_dbt_core_snowflake
+git clone git@github.com:Grechenish/snowflake-dbt-trading-pnl.git
+cd snowflake-dbt-trading-pnl
 ```
 
 **2. Create your `.env` from the template and fill it in** (section 3 describes each variable):
@@ -46,19 +46,19 @@ On Windows PowerShell, use `Copy-Item .env.example .env`.
 **3. Build the image:**
 
 ```bash
-docker build -t dbt-hol .
+docker build -t trading-pnl .
 ```
 
 **4. Check the connection.** It should end with `All checks passed!`:
 
 ```bash
-docker run --rm --env-file .env dbt-hol debug --target dev
+docker run --rm --env-file .env trading-pnl debug --target dev
 ```
 
 **5. Build everything in dev:**
 
 ```bash
-docker run --rm --env-file .env dbt-hol build --target dev
+docker run --rm --env-file .env trading-pnl build --target dev
 ```
 
 This builds the seeds and all 11 models in `DBT_HOL_DEV` and runs all 51 data tests and 3 unit tests, in about a minute. A successful run ends with:
@@ -67,12 +67,12 @@ This builds the seeds and all 11 models in `DBT_HOL_DEV` and runs all 51 data te
 Done. PASS=67 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=67
 ```
 
-> The image's default command is `dbt build --target dev`, so `docker run ... dbt-hol` with no arguments builds **dev**. Production only runs when `--target prod` is passed explicitly, which is what the scheduled job does.
+> The image's default command is `dbt build --target dev`, so `docker run ... trading-pnl` with no arguments builds **dev**. Production only runs when `--target prod` is passed explicitly, which is what the scheduled job does.
 
 Anything after the image name is passed to `dbt`, so any dbt command works the same way:
 
 ```bash
-docker run --rm --env-file .env dbt-hol <dbt command> --target dev
+docker run --rm --env-file .env trading-pnl <dbt command> --target dev
 ```
 
 After changing SQL or YAML, **rebuild the image (step 3)** before running again. The project is copied into the image at build time and isn't mounted.
@@ -81,14 +81,14 @@ After changing SQL or YAML, **rebuild the image (step 3)** before running again.
 
 ## 3. Environment variables
 
-The image contains no credentials. `dbt_hol/profiles.yml` reads these variables when dbt starts.
+The image contains no credentials. `trading_pnl/profiles.yml` reads these variables when dbt starts.
 
 | Variable | Required | Example (placeholder) | Description |
 |---|---|---|---|
 | `SNOWFLAKE_ACCOUNT` | ✅ | `MYORG-MYACCOUNT` | Account identifier in the form `<orgname>-<account_name>`. Find it in Snowsight under your profile → Account → View account details, or run `SELECT CURRENT_ORGANIZATION_NAME() \|\| '-' \|\| CURRENT_ACCOUNT_NAME();`. **Not a URL:** no `https://`, `.snowflakecomputing.com` or slashes. |
 | `SNOWFLAKE_USER` | — | `dbt_user` | Login user. Defaults to `dbt_user` if not set. |
 | `SNOWFLAKE_PASSWORD` | ✅ | `<your-password>` | Password for that user. |
-| `DBT_PROFILES_DIR` | Local only | `C:\path\to\repo\dbt_hol` | Tells a local dbt where `profiles.yml` is. Already set inside the Docker image. |
+| `DBT_PROFILES_DIR` | Local only | `C:\path\to\repo\trading_pnl` | Tells a local dbt where `profiles.yml` is. Already set inside the Docker image. |
 
 **`.env` rules:**
 
@@ -108,12 +108,12 @@ The **scheduled job** reads the same three variables from GitHub repository secr
 
 ## 4. Running the pipeline
 
-All examples use Docker. For a local virtual environment, drop the `docker run --rm --env-file .env dbt-hol` prefix and run `dbt ...` from `dbt_hol/` (see section 5).
+All examples use Docker. For a local virtual environment, drop the `docker run --rm --env-file .env trading-pnl` prefix and run `dbt ...` from `trading_pnl/` (see section 5).
 
 ### 4.1 The full pipeline in one command (recommended)
 
 ```bash
-docker run --rm --env-file .env dbt-hol build --target dev
+docker run --rm --env-file .env trading-pnl build --target dev
 ```
 
 `dbt build` runs seeds, models and tests together, in dependency order. If a model's test fails, dbt skips everything that depends on that model, so bad data doesn't spread.
@@ -123,9 +123,9 @@ docker run --rm --env-file .env dbt-hol build --target dev
 Use this order on a fresh database:
 
 ```bash
-docker run --rm --env-file .env dbt-hol seed --target dev   # 1. load trade blotters into SEEDS
-docker run --rm --env-file .env dbt-hol run  --target dev   # 2. build all 11 models
-docker run --rm --env-file .env dbt-hol test --target dev   # 3. run all data and unit tests
+docker run --rm --env-file .env trading-pnl seed --target dev   # 1. load trade blotters into SEEDS
+docker run --rm --env-file .env trading-pnl run  --target dev   # 2. build all 11 models
+docker run --rm --env-file .env trading-pnl test --target dev   # 3. run all data and unit tests
 ```
 
 | Step | What it does | What you should see |
@@ -141,7 +141,7 @@ Unlike `build`, `run` doesn't stop at a failed test. With `seed` → `run` → `
 ### 4.3 Source freshness
 
 ```bash
-docker run --rm --env-file .env dbt-hol source freshness --target dev
+docker run --rm --env-file .env trading-pnl source freshness --target dev
 ```
 
 This checks that the Marketplace feed is still updating. It warns at 100 days old and errors at 150. The free listing is normally about 90 days behind, so a `PASS` is expected.
@@ -152,11 +152,11 @@ dbt's node selection works as usual:
 
 ```bash
 # one model
-docker run --rm --env-file .env dbt-hol build --target dev -s fct_trading_pnl
+docker run --rm --env-file .env trading-pnl build --target dev -s fct_trading_pnl
 # a model and everything downstream of it
-docker run --rm --env-file .env dbt-hol build --target dev -s int_trading_book+
+docker run --rm --env-file .env trading-pnl build --target dev -s int_trading_book+
 # a whole layer
-docker run --rm --env-file .env dbt-hol build --target dev -s models/marts
+docker run --rm --env-file .env trading-pnl build --target dev -s models/marts
 ```
 
 ### 4.5 Browsing the docs and lineage graph
@@ -164,7 +164,7 @@ docker run --rm --env-file .env dbt-hol build --target dev -s models/marts
 `docs generate` and `docs serve` must run in the same container, because the container's files are discarded when it exits:
 
 ```bash
-docker run --rm -p 8080:8080 --env-file .env --entrypoint sh dbt-hol \
+docker run --rm -p 8080:8080 --env-file .env --entrypoint sh trading-pnl \
   -c "dbt docs generate --target dev && dbt docs serve --host 0.0.0.0 --port 8080 --no-browser"
 ```
 
@@ -193,7 +193,7 @@ python -m venv .venv
 # Windows:  .venv\Scripts\Activate.ps1      macOS/Linux:  source .venv/bin/activate
 pip install -r requirements.txt
 
-cd dbt_hol
+cd trading_pnl
 dbt deps                       # installs dbt_utils (once, and after packages.yml changes)
 dbt debug --profiles-dir .     # or set DBT_PROFILES_DIR and drop --profiles-dir
 dbt build --profiles-dir .     # target dev is the default locally
@@ -208,7 +208,7 @@ On Windows, these PowerShell commands save them permanently. Restart your termin
 [Environment]::SetEnvironmentVariable("SNOWFLAKE_USER", "dbt_user", "User")
 $p = Read-Host "Snowflake password" -AsSecureString
 [Environment]::SetEnvironmentVariable("SNOWFLAKE_PASSWORD", [System.Net.NetworkCredential]::new("", $p).Password, "User")
-[Environment]::SetEnvironmentVariable("DBT_PROFILES_DIR", "<repo path>\dbt_hol", "User")
+[Environment]::SetEnvironmentVariable("DBT_PROFILES_DIR", "<repo path>\trading_pnl", "User")
 ```
 
 ---
@@ -217,12 +217,12 @@ $p = Read-Host "Snowflake password" -AsSecureString
 
 | Task | How |
 |---|---|
-| **Add or fix a trade** | Edit `dbt_hol/seeds/manual_book*.csv`, then run `dbt build`. The trade date must be a trading day (test `assert_trades_on_trading_days`), the ticker must exist in the price data, and the quantity must be positive. |
+| **Add or fix a trade** | Edit `trading_pnl/seeds/manual_book*.csv`, then run `dbt build`. The trade date must be a trading day (test `assert_trades_on_trading_days`), the ticker must exist in the price data, and the quantity must be positive. |
 | **Correct or delete a trade older than 7 days** | Do the above, then run `dbt build --full-refresh -s fct_trading_pnl` once. The incremental fact only reprocesses the last `pnl_lookback_days` days, and its equality test fails until you do. In production, use **Run workflow** with **full_refresh** ticked. |
 | **Add a trading desk** | Add `seeds/manual_book3.csv` with the same columns, add it to the `relations` list in `int_trading_book.sql`, and add it to `seeds/_seeds.yml`. |
 | **Add a reporting currency** | Add it to `report_currencies` in `dbt_project.yml`, then add a `not_null` test for `close_price_<ccy>` in `models/marts/_marts.yml`. |
 | **Load more history** | Change `start_date` in `dbt_project.yml`, or for one run only use `--vars '{start_date: "2024-01-01"}'`. More history means more rows and cost; see [PERFORMANCE.md](PERFORMANCE.md). |
-| **Find a model's queries in Snowflake** | Query History → filter on `QUERY_TAG = 'dbt_hol.<model_name>'`. |
+| **Find a model's queries in Snowflake** | Query History → filter on `QUERY_TAG = 'trading_pnl.<model_name>'`. |
 | **Run only the unit tests** | `dbt test --select "test_type:unit"`. They live in `models/intermediate/_intermediate__unit_tests.yml`. |
 | **Use the LARGE warehouses** | Add `--vars '{use_heavy_compute: true}'` to the command. Intermediate models then run on `DBT_*_HEAVY_WH`, and `fct_trading_pnl` resizes the target warehouse around its run. It's off by default because it costs more than it saves at this data size ([PERFORMANCE.md](PERFORMANCE.md)). |
 | **Upgrade dbt or another Python package** | Edit `requirements.in`, then regenerate the lock with `pip install uv` and `uv pip compile requirements.in --universal --python-version 3.14 -o requirements.txt`. Reinstall with `pip install -r requirements.txt` and run `dbt build` before committing. |

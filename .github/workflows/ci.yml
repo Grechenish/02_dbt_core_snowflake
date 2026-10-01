@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build image
-        run: docker build -t dbt-hol .
+        run: docker build -t trading-pnl .
 
       # dbt parse renders every model, test, macro and config without connecting to Snowflake,
       # so placeholder credentials are enough. --warn-error turns deprecations and other warnings into failures.
@@ -26,4 +26,4 @@ jobs:
         run: |
           docker run --rm \
             -e SNOWFLAKE_ACCOUNT=ci-placeholder -e SNOWFLAKE_PASSWORD=ci-placeholder \
-            dbt-hol --warn-error parse
+            trading-pnl --warn-error parse

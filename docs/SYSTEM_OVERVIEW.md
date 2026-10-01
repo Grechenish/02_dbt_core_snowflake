@@ -1,6 +1,6 @@
 # System Architecture Overview
 
-This document describes how the `dbt_hol` analytics pipeline is built and run: the container that executes it, the Snowflake objects it reads and writes, and the layered transformation design inside the dbt project.
+This document describes how the `trading_pnl` analytics pipeline is built and run: the container that executes it, the Snowflake objects it reads and writes, and the layered transformation design inside the dbt project.
 
 - **Model-by-model reference:** [MODELS_DICTIONARY.md](MODELS_DICTIONARY.md)
 - **Setup and day-to-day commands:** [README.md](README.md)
@@ -13,7 +13,7 @@ The pipeline turns public market data from the Snowflake Marketplace into daily 
 
 | Component | Technology | Where it lives |
 |---|---|---|
-| Transformations | dbt Core 1.12.5 + dbt-snowflake 1.12.1, dbt_utils 1.4.1 | `dbt_hol/` |
+| Transformations | dbt Core 1.12.5 + dbt-snowflake 1.12.1, dbt_utils 1.4.1 | `trading_pnl/` |
 | Warehouse | Snowflake | Account identifier in `SNOWFLAKE_ACCOUNT` |
 | Source data | Snowflake Public Data (Free) Marketplace share | `SNOWFLAKE_PUBLIC_DATA_FREE` |
 | Runtime image | Docker (`python:3.14-slim`) | `Dockerfile` |
@@ -25,8 +25,8 @@ The pipeline turns public market data from the Snowflake Marketplace into daily 
 ```mermaid
 flowchart LR
     subgraph GH["GitHub Actions (daily 07:00 UTC or manual)"]
-        A[checkout] --> B["docker build -t dbt-hol ."]
-        B --> C["docker run dbt-hol build --target prod"]
+        A[checkout] --> B["docker build -t trading-pnl ."]
+        B --> C["docker run trading-pnl build --target prod"]
     end
     subgraph DEV["Developer machine"]
         V[".venv: dbt build (target dev)"]
@@ -63,7 +63,7 @@ Which environment a run uses is controlled only by the dbt `--target` flag. The 
 | `.github/workflows/dbt-daily.yml` | Builds the image, runs it on a schedule, and publishes the dbt docs site. |
 | `.github/workflows/ci.yml` | Builds the image and parses the project on every pull request and push to main. |
 | `.github/dependabot.yml` | Opens weekly pull requests that keep the workflow actions current. |
-| `dbt_hol/profiles.yml` | Connection profile. It reads every credential from environment variables. |
+| `trading_pnl/profiles.yml` | Connection profile. It reads every credential from environment variables. |
 
 > **There is no docker-compose setup.** The pipeline is a single short-lived container that connects to a managed warehouse, with no companion services such as a database, scheduler or API. A plain `docker run` is all that's needed.
 
@@ -75,14 +75,14 @@ The `Dockerfile` builds the image in this order:
 2. **Environment settings:**
    - `PYTHONUNBUFFERED=1` streams dbt logs to the CI console as they happen.
    - `PIP_NO_CACHE_DIR=1` keeps the image small.
-   - `DBT_PROFILES_DIR=/app/dbt_hol` tells dbt to use the `profiles.yml` stored in the project, rather than `~/.dbt`.
+   - `DBT_PROFILES_DIR=/app/trading_pnl` tells dbt to use the `profiles.yml` stored in the project, rather than `~/.dbt`.
 3. **Dependencies:** it copies `requirements.txt` and runs `pip install` before copying the project. Because of this order, Docker reuses the cached dependency layer whenever only SQL or YAML files change. `requirements.txt` is a lock file that pins every transitive package, so each daily rebuild installs exactly the versions that were tested.
-4. **Project and packages:** it copies `dbt_hol/` and runs `dbt deps` at build time, so dbt_utils is part of the image. At runtime, the only network access needed is to Snowflake.
+4. **Project and packages:** it copies `trading_pnl/` and runs `dbt deps` at build time, so dbt_utils is part of the image. At runtime, the only network access needed is to Snowflake.
 5. **Non-root user:** it creates a user named `dbt`, gives it ownership of `/app`, and switches to it. dbt writes `target/` and `logs/` inside the project folder, which is why the user needs that ownership.
 6. **Entrypoint:**
    - `ENTRYPOINT ["dbt"]` makes the container behave like the `dbt` command.
    - `CMD ["build", "--target", "dev"]` is the default command, so a bare `docker run` never touches production.
-   - Any arguments passed to `docker run` replace `CMD`. For example, `docker run ... dbt-hol debug` runs `dbt debug`.
+   - Any arguments passed to `docker run` replace `CMD`. For example, `docker run ... trading-pnl debug` runs `dbt debug`.
 
 `.dockerignore` excludes:
 
@@ -130,13 +130,13 @@ The role, warehouse, database and default schema for each environment are writte
 The `dbt-build` job runs these steps:
 
 1. `actions/checkout@v7`.
-2. `docker build -t dbt-hol .`
+2. `docker build -t trading-pnl .`
 3. Runs the container. The three Snowflake secrets are passed as environment variables, and the container's `target/` folder is mounted to the runner's `./artifacts` folder:
    ```bash
    docker run --rm \
      -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
-     -v "$PWD/artifacts:/app/dbt_hol/target" \
-     dbt-hol build --target prod
+     -v "$PWD/artifacts:/app/trading_pnl/target" \
+     trading-pnl build --target prod
    ```
    The `artifacts` folder is made world-writable (`chmod 777`) first, because the container runs as the non-root `dbt` user. When a manual run ticks `full_refresh`, `--full-refresh` is added, which rebuilds the incremental `fct_trading_pnl` from scratch.
 4. Only after a successful build: runs `dbt docs generate --static --target prod` and uploads the single-file site (`static_index.html`, renamed `index.html`) as the GitHub Pages artifact.
@@ -150,9 +150,9 @@ A second job, `deploy-docs`, publishes the docs site to GitHub Pages whenever st
 **Locally** (with Docker Desktop installed):
 
 ```bash
-docker build -t dbt-hol .
-docker run --rm --env-file .env dbt-hol                      # dbt build --target dev (the default)
-docker run --rm --env-file .env dbt-hol debug --target dev   # any dbt command works
+docker build -t trading-pnl .
+docker run --rm --env-file .env trading-pnl                      # dbt build --target dev (the default)
+docker run --rm --env-file .env trading-pnl debug --target dev   # any dbt command works
 ```
 
 `dbt build` runs seeds, models, snapshots and tests in dependency order. If a test fails, dbt skips the models that depend on the failing model, so bad data doesn't spread further.
@@ -352,7 +352,7 @@ dbt build --vars '{start_date: "2024-01-01"}'
 
 **Query tagging.** `macros/query_tag.sql` overrides dbt-snowflake's `snowflake__set_query_tag` and `snowflake__unset_query_tag`.
 
-- **What it does:** before each model, seed or test runs, the session's `QUERY_TAG` is set to `dbt_hol.<node_name>`. Afterwards it is reset to its previous value.
+- **What it does:** before each model, seed or test runs, the session's `QUERY_TAG` is set to `trading_pnl.<node_name>`. Afterwards it is reset to its previous value.
 - **Why it's needed:** the built-in macros only tag queries when `query_tag` is set in a node's config.
 - **What you get:** every query in Snowflake's Query History can be traced back to the model or test that issued it.
 - **Override:** an explicit `query_tag` in a model's config still takes precedence.
