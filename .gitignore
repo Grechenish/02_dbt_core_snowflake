@@ -11,10 +11,6 @@ dbt_packages/
 logs/
 .user.yml
 
-# dbt Cloud CLI binary (not used -- this project uses dbt Core)
-dbt.exe
-
-#cloude
-
+# Local Claude Code settings
 .claude/
 

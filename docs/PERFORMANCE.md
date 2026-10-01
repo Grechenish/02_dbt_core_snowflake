@@ -1,6 +1,6 @@
 # Performance Validation
 
-This document records the performance checks for the `dbt_hol` pipeline, run on 2026-10-01 against `DBT_HOL_DEV`. They cover:
+This document records the performance checks for the `trading_pnl` pipeline, run on 2026-10-01 against `DBT_HOL_DEV`. They cover:
 
 - how long each part of the pipeline takes
 - which warehouse size suits each heavy model
@@ -29,7 +29,7 @@ Architecture context is in [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md).
 All measurements come from Snowflake, not from timing on the client.
 
 - **Per-node timings:** dbt's `target/run_results.json` from a `dbt build --full-refresh`.
-- **Per-model warehouse statistics:** `INFORMATION_SCHEMA.QUERY_HISTORY`, filtered on `QUERY_TAG`. The `query_tag` macro tags every query as `dbt_hol.<node>`, which is what makes this per-model breakdown possible.
+- **Per-model warehouse statistics:** `INFORMATION_SCHEMA.QUERY_HISTORY`, filtered on `QUERY_TAG`. The `query_tag` macro tags every query as `trading_pnl.<node>`, which is what makes this per-model breakdown possible.
 - **Warehouse-size benchmark:** each heavy model's compiled SQL run as `CREATE TRANSIENT TABLE ... AS` on `DBT_DEV_WH` at XSMALL, SMALL, MEDIUM and LARGE. Every run:
   - started on a freshly resumed warehouse, so the local disk cache was empty
   - had `USE_CACHED_RESULT = FALSE`
@@ -151,8 +151,8 @@ WHERE warehouse_name LIKE 'DBT\\_%' ESCAPE '\\'
 GROUP BY 1, 2
 ORDER BY 2, 1;
 
--- Execution time and data scanned per dbt model (uses the dbt_hol.<node> query tags)
-SELECT REPLACE(query_tag, 'dbt_hol.', '') AS node,
+-- Execution time and data scanned per dbt model (uses the trading_pnl.<node> query tags)
+SELECT REPLACE(query_tag, 'trading_pnl.', '') AS node,
        warehouse_name, warehouse_size,
        COUNT(*)                                   AS queries,
        ROUND(SUM(execution_time) / 1000, 1)       AS exec_s,
@@ -160,7 +160,7 @@ SELECT REPLACE(query_tag, 'dbt_hol.', '') AS node,
        SUM(partitions_scanned)                    AS partitions_scanned,
        SUM(partitions_total)                      AS partitions_total
 FROM snowflake.account_usage.query_history
-WHERE query_tag LIKE 'dbt_hol.%'
+WHERE query_tag LIKE 'trading_pnl.%'
   AND start_time >= DATEADD(day, -1, CURRENT_TIMESTAMP())
 GROUP BY 1, 2, 3
 ORDER BY exec_s DESC;
@@ -170,7 +170,7 @@ ORDER BY exec_s DESC;
 
 ## 6. Reproducing the benchmark
 
-1. Run `dbt compile` so the compiled SQL in `dbt_hol/target/compiled/` is current.
+1. Run `dbt compile` so the compiled SQL in `trading_pnl/target/compiled/` is current.
 2. For each warehouse size:
    1. Suspend `DBT_DEV_WH`.
    2. Set its size.
@@ -180,4 +180,4 @@ ORDER BY exec_s DESC;
    6. Read `EXECUTION_TIME` for that query ID from `INFORMATION_SCHEMA.QUERY_HISTORY_BY_SESSION()`.
 3. Drop `perf_scratch`, set the warehouse back to XSMALL, and suspend it.
 
-Tag the session (`ALTER SESSION SET QUERY_TAG = 'dbt_hol.perf_benchmark'`) so benchmark queries are easy to find in Query History and don't mix with pipeline runs.
+Tag the session (`ALTER SESSION SET QUERY_TAG = 'trading_pnl.perf_benchmark'`) so benchmark queries are easy to find in Query History and don't mix with pipeline runs.

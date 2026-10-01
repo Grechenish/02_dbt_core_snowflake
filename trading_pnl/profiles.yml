@@ -1,6 +1,6 @@
 # Credentials come from environment variables -- never commit secrets.
 # See ../.env.example for the variables to set.
-dbt_hol:
+trading_pnl:
   target: dev
   outputs:
     dev:
