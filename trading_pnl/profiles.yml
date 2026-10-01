@@ -17,6 +17,20 @@ trading_pnl:
       schema: "{{ env_var('DBT_SCHEMA', 'DEV_' ~ env_var('SNOWFLAKE_USER') | upper) }}"
       threads: 4
 
+    # Pull-request checks in GitHub Actions. Builds into ANALYTICS_DEV under CI_PR_<number>_*; the
+    # role has no write access to production at all, only the read access --defer and clone need.
+    ci:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: svc_dbt_ci
+      private_key: "{{ env_var('SNOWFLAKE_PRIVATE_KEY') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: transformer_ci
+      warehouse: dev_wh
+      database: analytics_dev
+      schema: "{{ env_var('DBT_SCHEMA') }}"
+      threads: 4
+
     # The daily GitHub Actions run. Service user with key-pair authentication.
     prod:
       type: snowflake

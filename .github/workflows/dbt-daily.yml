@@ -1,9 +1,20 @@
 name: dbt daily build
 
+# Production: refresh the market data and trades, then rebuild and test every model in ANALYTICS.
+# Runs every morning, and after every merge to main so merged changes reach production the same day.
+# A failed run marks the workflow red, and GitHub emails the repository owner about it.
 on:
   schedule:
     - cron: "0 7 * * *"   # every day at 07:00 UTC
-  workflow_dispatch:        # allow manual runs from the Actions tab
+  push:
+    branches: [main]
+    paths:
+      - "trading_pnl/**"
+      - "ingestion/**"
+      - "data/**"
+      - "Dockerfile"
+      - "requirements.txt"
+  workflow_dispatch:        # manual runs from the Actions tab
     inputs:
       full_refresh:
         description: "Rebuild the incremental market-data models from scratch (needed after a restatement older than market_data_lookback_days)"
@@ -13,6 +24,7 @@ on:
 permissions:
   contents: read
 
+# Never run two production builds at once; a second one waits for the first.
 concurrency:
   group: dbt-prod
   cancel-in-progress: false
@@ -23,57 +35,57 @@ jobs:
     timeout-minutes: 30
     outputs:
       docs_uploaded: ${{ steps.upload_docs.outcome }}
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_PROD_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Build image
-        run: docker build -t trading-pnl .
-
-      - name: Run dbt build (prod)
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_PROD_PRIVATE_KEY }}
-          FULL_REFRESH: ${{ inputs.full_refresh }}   # empty on scheduled runs
         run: |
-          mkdir -p artifacts && chmod 777 artifacts   # container runs as non-root user
+          docker build -t trading-pnl .
+          mkdir -p artifacts/freshness artifacts/observe artifacts/docs && chmod -R 777 artifacts   # the container runs as a non-root user
+
+      # Fails the run (and skips the build) if a source has stopped updating, so a stale feed is
+      # noticed instead of silently republishing old numbers. Warnings don't stop the run.
+      - name: Check source freshness
+        run: |
+          docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
+            -v "$PWD/artifacts/freshness:/app/trading_pnl/target" \
+            trading-pnl source freshness --target prod
+
+      # Observe only: how far back did the market-data provider change history since the last run?
+      # Must run before the build, which would overwrite the evidence inside the lookback window.
+      # The output (in this step's log) is what the lookback window should be sized from.
+      - name: Measure market-data restatements (observe only)
+        continue-on-error: true
+        run: |
+          docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
+            -v "$PWD/artifacts/observe:/app/trading_pnl/target" \
+            trading-pnl show --target prod --select market_data_restatement_depth --limit 50
+
+      - name: dbt build
+        env:
+          FULL_REFRESH: ${{ inputs.full_refresh }}   # empty on scheduled and push runs
+        run: |
           extra_args=""
           if [ "$FULL_REFRESH" = "true" ]; then extra_args="--full-refresh"; fi
-          docker run --rm \
-            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
+          docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
             -v "$PWD/artifacts:/app/trading_pnl/target" \
             trading-pnl build --target prod $extra_args
 
-      # Static dbt docs site (lineage graph + catalog) for GitHub Pages, only after a successful build.
-      - name: Generate dbt docs (prod)
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_PROD_PRIVATE_KEY }}
-        run: |
-          mkdir -p artifacts/docs && chmod 777 artifacts/docs
-          docker run --rm \
-            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
-            -v "$PWD/artifacts/docs:/app/trading_pnl/target" \
-            trading-pnl docs generate --static --target prod
-          mkdir -p site && cp artifacts/docs/static_index.html site/index.html
-
-      - name: Upload docs site
-        id: upload_docs
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
-
-      # Runs even if the build failed; marks the run red if the Marketplace feed has stopped updating.
-      - name: Check source freshness (prod)
+      - name: Summarize run
         if: always()
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_PROD_PRIVATE_KEY }}
-        run: |
-          mkdir -p artifacts/freshness && chmod 777 artifacts/freshness
-          docker run --rm \
-            -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
-            -v "$PWD/artifacts/freshness:/app/trading_pnl/target" \
-            trading-pnl source freshness --target prod
+        run: .github/scripts/dbt_run_summary.sh "dbt build (prod)" artifacts/run_results.json
+
+      # Pull-request CI downloads this manifest to work out which models a change touches.
+      # Only published after a successful build, so CI always compares against a good state.
+      - name: Upload production manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: prod-manifest
+          path: artifacts/manifest.json
+          retention-days: 30
 
       - name: Upload run results
         if: always()
@@ -86,7 +98,20 @@ jobs:
             artifacts/freshness/sources.json
           if-no-files-found: ignore
 
-  # Publishes the docs site whenever it was uploaded, even if the later freshness check failed.
+      # Static dbt docs site (lineage graph + catalog) for GitHub Pages, only after a successful build.
+      - name: Generate dbt docs
+        run: |
+          docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
+            -v "$PWD/artifacts/docs:/app/trading_pnl/target" \
+            trading-pnl docs generate --static --target prod
+          mkdir -p site && cp artifacts/docs/static_index.html site/index.html
+
+      - name: Upload docs site
+        id: upload_docs
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
   # Requires Settings > Pages > Source: "GitHub Actions".
   deploy-docs:
     needs: dbt-build
