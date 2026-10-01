@@ -10,3 +10,74 @@ models:
     columns:
       - name: close_price
         data_tests: [not_null]
+
+  - name: int_trading_book
+    description: Trades of all desks (union of the manual_book seeds) with signed quantity and cash flow.
+    columns:
+      - name: book
+        data_tests: [not_null]
+      - name: trade_date
+        data_tests: [not_null]
+      - name: trader
+        data_tests: [not_null]
+      - name: instrument
+        description: Stock ticker; must exist in the stock price history.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_stock_prices_daily')
+                field: ticker
+      - name: action
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [BUY, SELL]
+      - name: quantity
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: price_per_share
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: currency
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [USD, EUR, GBP]
+
+  - name: int_daily_position
+    description: One row per position (book/trader/instrument/currency) per trading day since its first trade; non-trade days are HOLD.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [book, trader, instrument, currency, position_date]
+    columns:
+      - name: action
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [BUY, SELL, HOLD]
+      - name: shares_held
+        description: Running share count; a negative value would mean selling more than was bought.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+
+  - name: int_trading_pnl
+    description: Daily positions marked to market in the book currency, with cumulative cash and PnL.
+    columns:
+      - name: usd_fx_rate
+        data_tests: [not_null]
+      - name: market_value
+        data_tests: [not_null]
+      - name: pnl
+        data_tests: [not_null]

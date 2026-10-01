@@ -1,0 +1,8 @@
+book,trade_date,trader,instrument,action,quantity,price_per_share,currency
+Book1,2025-01-15,Jeff A.,AAPL,BUY,100,195.11,GBP
+Book1,2025-03-10,Jeff A.,AAPL,BUY,50,174.26,GBP
+Book1,2025-06-02,Nick Z.,NVDA,BUY,200,101.52,GBP
+Book1,2025-09-15,Jeff A.,AAPL,SELL,60,173.44,GBP
+Book1,2025-11-03,Nick Z.,NVDA,SELL,100,157.72,GBP
+Book1,2026-02-02,Nick Z.,MSFT,BUY,40,310.03,GBP
+Book1,2026-06-01,Jeff A.,AAPL,SELL,90,226.71,GBP

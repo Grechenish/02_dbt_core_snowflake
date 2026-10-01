@@ -20,3 +20,24 @@ models:
         data_tests: [not_null]
       - name: close_price_gbp
         data_tests: [not_null]
+
+  - name: fct_trading_pnl
+    description: >
+      Daily PnL per book / trader / instrument in the book currency. Incremental (merge);
+      run with --full-refresh after editing historical trades in the seeds.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [book, trader, instrument, position_date]
+    columns:
+      - name: pnl
+        data_tests: [not_null]
+
+  - name: fct_trading_pnl_finance_view
+    description: Finance view - daily market value, cumulative cash and PnL per book.
+
+  - name: fct_trading_pnl_risk_view
+    description: Risk view - open exposure per trader/instrument and its share of the book.
+
+  - name: fct_trading_pnl_treasury_view
+    description: Treasury view - daily cash flows and running cash balance per currency.
