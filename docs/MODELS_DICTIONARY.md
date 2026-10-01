@@ -1,6 +1,6 @@
 # Data Models Dictionary
 
-This is a reference for every node in the `dbt_hol` project: 2 sources, 2 seeds, 11 models, 2 singular tests and 3 unit tests. For each one it gives the business purpose, how it's materialized, its lineage, its key logic and the tests that guard it.
+This is a reference for every node in the `trading_pnl` project: 2 sources, 2 seeds, 11 models, 2 singular tests and 3 unit tests. For each one it gives the business purpose, how it's materialized, its lineage, its key logic and the tests that guard it.
 
 The layering approach, schemas and warehouses are explained in [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md). Runtimes and sizing are in [PERFORMANCE.md](PERFORMANCE.md).
 

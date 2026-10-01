@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build image
-        run: docker build -t dbt-hol .
+        run: docker build -t trading-pnl .
 
       - name: Run dbt build (prod)
         env:
@@ -41,8 +41,8 @@ jobs:
           if [ "$FULL_REFRESH" = "true" ]; then extra_args="--full-refresh"; fi
           docker run --rm \
             -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
-            -v "$PWD/artifacts:/app/dbt_hol/target" \
-            dbt-hol build --target prod $extra_args
+            -v "$PWD/artifacts:/app/trading_pnl/target" \
+            trading-pnl build --target prod $extra_args
 
       # Static dbt docs site (lineage graph + catalog) for GitHub Pages, only after a successful build.
       - name: Generate dbt docs (prod)
@@ -54,8 +54,8 @@ jobs:
           mkdir -p artifacts/docs && chmod 777 artifacts/docs
           docker run --rm \
             -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
-            -v "$PWD/artifacts/docs:/app/dbt_hol/target" \
-            dbt-hol docs generate --static --target prod
+            -v "$PWD/artifacts/docs:/app/trading_pnl/target" \
+            trading-pnl docs generate --static --target prod
           mkdir -p site && cp artifacts/docs/static_index.html site/index.html
 
       - name: Upload docs site
@@ -75,8 +75,8 @@ jobs:
           mkdir -p artifacts/freshness && chmod 777 artifacts/freshness
           docker run --rm \
             -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_USER -e SNOWFLAKE_PASSWORD \
-            -v "$PWD/artifacts/freshness:/app/dbt_hol/target" \
-            dbt-hol source freshness --target prod
+            -v "$PWD/artifacts/freshness:/app/trading_pnl/target" \
+            trading-pnl source freshness --target prod
 
       - name: Upload run results
         if: always()

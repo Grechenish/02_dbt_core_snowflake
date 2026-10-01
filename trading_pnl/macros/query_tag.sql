@@ -2,7 +2,7 @@
     A query_tag set in a model's config still wins. Overrides dbt-snowflake's built-in versions,
     which only tag (and reset) when query_tag is configured explicitly. -#}
 {% macro snowflake__set_query_tag() -%}
-    {% set new_query_tag = config.get('query_tag') or ('dbt_hol.' ~ model.name) %}
+    {% set new_query_tag = config.get('query_tag') or ('trading_pnl.' ~ model.name) %}
     {% set original_query_tag = get_current_query_tag() %}
     {{ log("Setting query_tag to '" ~ new_query_tag ~ "'. Will reset to '" ~ original_query_tag ~ "' after materialization.") }}
     {% do run_query("alter session set query_tag = '{}'".format(new_query_tag)) %}

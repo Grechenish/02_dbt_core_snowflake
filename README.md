@@ -1,7 +1,7 @@
 # Trading PnL and stock history on Snowflake with dbt Core
 
-[![ci](https://github.com/Grechenish/02_dbt_core_snowflake/actions/workflows/ci.yml/badge.svg)](https://github.com/Grechenish/02_dbt_core_snowflake/actions/workflows/ci.yml)
-[![dbt daily build](https://github.com/Grechenish/02_dbt_core_snowflake/actions/workflows/dbt-daily.yml/badge.svg)](https://github.com/Grechenish/02_dbt_core_snowflake/actions/workflows/dbt-daily.yml)
+[![ci](https://github.com/Grechenish/snowflake-dbt-trading-pnl/actions/workflows/ci.yml/badge.svg)](https://github.com/Grechenish/snowflake-dbt-trading-pnl/actions/workflows/ci.yml)
+[![dbt daily build](https://github.com/Grechenish/snowflake-dbt-trading-pnl/actions/workflows/dbt-daily.yml/badge.svg)](https://github.com/Grechenish/snowflake-dbt-trading-pnl/actions/workflows/dbt-daily.yml)
 
 A production-style analytics engineering pipeline. dbt Core transforms free Snowflake Marketplace market data inside a Docker image, and GitHub Actions builds, tests and documents it every day.
 
@@ -10,7 +10,7 @@ It produces two things:
 - **Daily stock history** for about 10,000 US-listed securities, with close prices in USD, EUR and GBP.
 - **A trading profit-and-loss (PnL) mart** for two hand-maintained trading desks, with separate views for Finance, Risk and Treasury.
 
-The models, columns and lineage graph are browsable on the **[dbt docs site](https://grechenish.github.io/02_dbt_core_snowflake/)**, which the daily workflow republishes after each successful build.
+The models, columns and lineage graph are browsable on the **[dbt docs site](https://grechenish.github.io/snowflake-dbt-trading-pnl/)**, which the daily workflow republishes after each successful build.
 
 ## How it works
 
@@ -70,8 +70,8 @@ You need a Snowflake account where the [bootstrap script](docs/SYSTEM_OVERVIEW.m
 
 ```bash
 cp .env.example .env          # then fill in SNOWFLAKE_ACCOUNT and SNOWFLAKE_PASSWORD
-docker build -t dbt-hol .
-docker run --rm --env-file .env dbt-hol build --target dev
+docker build -t trading-pnl .
+docker run --rm --env-file .env trading-pnl build --target dev
 ```
 
 The [developer guide](docs/README.md) covers the local virtual-environment workflow, every command and troubleshooting.
@@ -84,7 +84,7 @@ The [developer guide](docs/README.md) covers the local virtual-environment workf
 | [System overview](docs/SYSTEM_OVERVIEW.md) | Docker, CI, Snowflake objects and the dbt layering |
 | [Models dictionary](docs/MODELS_DICTIONARY.md) | Every model's purpose, logic and tests |
 | [Performance validation](docs/PERFORMANCE.md) | Benchmarks, the bottleneck fix and the cost model |
-| [dbt docs site](https://grechenish.github.io/02_dbt_core_snowflake/) | Searchable model and column docs with the lineage graph |
+| [dbt docs site](https://grechenish.github.io/snowflake-dbt-trading-pnl/) | Searchable model and column docs with the lineage graph |
 
 ## Background
 

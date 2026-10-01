@@ -2,7 +2,6 @@
 .github
 .venv
 .env
-dbt.exe
 **/target
 **/logs
 **/dbt_packages

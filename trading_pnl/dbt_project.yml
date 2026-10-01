@@ -1,27 +1,16 @@
-
-# Name your project! Project names should contain only lowercase characters
-# and underscores. A good package name should reflect your organization's
-# name or the intended use of these models
-name: 'dbt_hol'
+name: 'trading_pnl'
 version: '1.0.0'
+profile: 'trading_pnl'
 
-# This setting configures which "profile" dbt uses for this project.
-profile: 'dbt_hol'
-
-# These configurations specify where dbt should look for different types of files.
-# The `model-paths` config, for example, states that models in this project can be
-# found in the "models/" directory. You probably won't need to change these!
 model-paths: ["models"]
 analysis-paths: ["analyses"]
 test-paths: ["tests"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
-snapshot-paths: ["snapshots"]
 
-clean-targets:         # directories to be removed by `dbt clean`
+clean-targets:
   - "target"
   - "dbt_packages"
-
 
 vars:
   start_date: '2025-01-01'          # how far back to load source data
@@ -36,11 +25,11 @@ vars:
   # to save a few seconds at this data size.
 
 seeds:
-  dbt_hol:
+  trading_pnl:
     +schema: seeds
 
 models:
-  dbt_hol:
+  trading_pnl:
     staging:
       +schema: staging
       +materialized: view
