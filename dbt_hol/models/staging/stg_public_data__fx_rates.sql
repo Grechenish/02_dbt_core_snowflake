@@ -9,4 +9,6 @@ select
 from {{ source('public_data', 'fx_rates_timeseries') }}
 where base_currency_id = 'USD'
   and quote_currency_id in ({{ "'" ~ var("report_currencies") | join("', '") ~ "'" }})
-  and date >= '{{ var("start_date") }}'
+  -- Start 10 days early so the as-of FX lookups always find a rate for the first trading day,
+  -- even when start_date is an ECB holiday on which Nasdaq trades (e.g. 1 May, Easter Monday, 26 December).
+  and date >= dateadd(day, -10, '{{ var("start_date") }}'::date)
