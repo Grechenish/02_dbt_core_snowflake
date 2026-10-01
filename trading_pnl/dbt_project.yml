@@ -22,12 +22,20 @@ vars:
   # How far back the restatement check compares the stored prices with the source.
   restatement_check_days: 90
 
+# Who may read what dbt builds in production. dbt applies these grants after every build and
+# revokes any SELECT it wasn't configured with, so this list is the single source of truth.
+# CI and developers read production for --defer and dbt clone; reporters only read the marts.
+# Outside prod nothing is granted: dev and CI schemas are private to the role that built them.
 seeds:
   trading_pnl:
     +schema: seeds
+    +grants:
+      select: "{{ ['TRANSFORMER_CI', 'DEVELOPER'] if target.name == 'prod' else [] }}"
 
 models:
   trading_pnl:
+    +grants:
+      select: "{{ ['TRANSFORMER_CI', 'DEVELOPER'] if target.name == 'prod' else [] }}"
     staging:
       +schema: staging
       +materialized: view
@@ -37,3 +45,5 @@ models:
     marts:
       +schema: marts
       +materialized: table
+      +grants:
+        select: "{{ ['TRANSFORMER_CI', 'DEVELOPER', 'REPORTER'] if target.name == 'prod' else [] }}"
