@@ -1,7 +1,10 @@
 name: ci
 
-# Fast checks on every pull request and push to main. No Snowflake credentials are needed,
-# so this also runs for pull requests from forks.
+# Every pull request is checked twice before it can merge:
+#   1. static checks: SQL lint, Python tests, Docker image build and dbt parse. No Snowflake access needed.
+#   2. dbt build on Snowflake: the changed models and everything downstream of them are built and
+#      tested in the pull request's own schemas (ANALYTICS_DEV.CI_PR_<number>_*), reading unchanged
+#      models from production. ci-cleanup.yml drops those schemas when the pull request closes.
 on:
   pull_request:
   push:
@@ -10,12 +13,29 @@ on:
 permissions:
   contents: read
 
+# A new push to the same pull request cancels its older, now outdated run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  validate:
+  static-checks:
+    name: static checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      # sqlfluff gets its own virtualenv: it pins an older click than dbt, so they can't share one.
+      - name: Lint SQL
+        run: |
+          python -m venv /tmp/lint
+          /tmp/lint/bin/pip install --quiet -r requirements-lint.txt
+          /tmp/lint/bin/sqlfluff lint trading_pnl/models trading_pnl/tests trading_pnl/analyses
 
       - name: Build image
         run: docker build -t trading-pnl .
@@ -27,3 +47,76 @@ jobs:
           docker run --rm \
             -e SNOWFLAKE_ACCOUNT=ci-placeholder -e SNOWFLAKE_USER=ci-placeholder \
             trading-pnl --warn-error parse
+
+  snowflake-build:
+    name: dbt build on Snowflake
+    needs: static-checks
+    # Secrets aren't available to pull requests from forks, so those only get the static checks.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read   # to download the production manifest from the daily workflow
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_CI_PRIVATE_KEY }}
+      DBT_SCHEMA: CI_PR_${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t trading-pnl .
+
+      # The manifest of the last successful production run describes what production looks like.
+      # dbt compares this branch against it to find the modified models (state:modified).
+      - name: Fetch production manifest
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p prod-state
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow dbt-daily.yml --branch main \
+                     --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name prod-manifest --dir prod-state; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No production manifest yet: building the whole project."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: dbt build (changed models and their children)
+        env:
+          STATE_FOUND: ${{ steps.state.outputs.found }}
+        run: |
+          mkdir -p artifacts && chmod 777 artifacts   # the container runs as a non-root user
+          run_dbt() {
+            docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY -e DBT_SCHEMA \
+              -v "$PWD/prod-state:/app/prod-state:ro" -v "$PWD/artifacts:/app/trading_pnl/target" \
+              trading-pnl "$@"
+          }
+          if [ "$STATE_FOUND" = "true" ]; then
+            # Changed incremental models start from a zero-copy clone of production, so their
+            # incremental branch (not a full rebuild) is what gets tested, against real data.
+            run_dbt clone --target ci --state /app/prod-state \
+              --select "state:modified+,config.materialized:incremental"
+            # Build what changed plus everything downstream. Unchanged parents are read from
+            # production (--defer) instead of being rebuilt in the CI schema.
+            run_dbt build --target ci --state /app/prod-state --defer --select "state:modified+"
+          else
+            run_dbt build --target ci
+          fi
+
+      - name: Summarize run
+        if: always()
+        run: .github/scripts/dbt_run_summary.sh "dbt build ($DBT_SCHEMA)" artifacts/run_results.json
+
+      - name: Upload run results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-dbt-run-results
+          path: |
+            artifacts/run_results.json
+            artifacts/manifest.json
+          if-no-files-found: ignore

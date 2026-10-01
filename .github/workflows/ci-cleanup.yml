@@ -1,0 +1,30 @@
+name: ci cleanup
+
+# Drops a pull request's CI schemas (ANALYTICS_DEV.CI_PR_<number>_*) once it is merged or closed.
+# They stay up while the pull request is open, so reviewers can query what CI built.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  drop-ci-schemas:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_CI_PRIVATE_KEY }}
+      DBT_SCHEMA: CI_PR_${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t trading-pnl .
+
+      - name: Drop CI schemas
+        run: |
+          docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY -e DBT_SCHEMA \
+            trading-pnl run-operation drop_ci_schemas --target ci --args "{schema_prefix: $DBT_SCHEMA}"

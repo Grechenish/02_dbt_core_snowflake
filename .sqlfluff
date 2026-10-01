@@ -1,0 +1,39 @@
+# SQL style checks, run in CI (`sqlfluff lint trading_pnl`).
+# The jinja templater fills in ref(), source(), var() and is_incremental() with stand-ins instead of
+# compiling through dbt, so linting needs no Snowflake connection and runs on every pull request.
+[sqlfluff]
+templater = jinja
+dialect = snowflake
+max_line_length = 120
+# Rules left out on purpose, because they fight the style this project uses:
+#   AM04 (select *): CTEs that pass a ref through unchanged are clearer as `select *`.
+#   ST06 (column order): columns follow the grain first, then the measures, not wildcard/simple/calc order.
+#   RF04 (keywords as identifiers): the source's own columns are called `date`, `value` and `variable`.
+#   LT09 (one select target per line): short selects such as `select book, max(x)` read better on one line.
+exclude_rules = AM04, ST06, RF04, LT09
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = True
+load_macros_from_path = trading_pnl/macros
+
+[sqlfluff:templater:jinja:context]
+report_currencies = ['EUR', 'GBP']
+
+[sqlfluff:indentation]
+tab_space_size = 4
+allow_implicit_indents = True
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+# Column aliases are lined up inside a select, as in the existing models.
+[sqlfluff:layout:type:alias_expression]
+spacing_before = align
+align_within = select_clause
+align_scope = bracketed
