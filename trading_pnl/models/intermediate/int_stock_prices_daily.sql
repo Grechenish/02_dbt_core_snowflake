@@ -18,8 +18,13 @@ with prices as (
     select *
     from {{ ref('stg_public_data__stock_prices') }}
     {% if is_incremental() %}
+        -- coalesce: an existing but empty table (e.g. created by `dbt run --empty`) is loaded in full
         where trade_date >= (
-                select dateadd(day, -{{ var('market_data_lookback_days') }}, max(stored.trade_date))
+                select
+                    coalesce(
+                        dateadd(day, -{{ var('market_data_lookback_days') }}, max(stored.trade_date)),
+                        '1900-01-01'::date
+                    )
                 from {{ this }} as stored
             )
     {% endif %}
