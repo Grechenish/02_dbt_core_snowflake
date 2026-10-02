@@ -200,17 +200,44 @@ def record_run(cursor, result: LoadResult) -> None:
     )
 
 
-def connect():
-    import snowflake.connector
+def private_key_der(text: str) -> bytes:
+    """DER bytes of an unencrypted private key given as text, however the secret was pasted.
+
+    Accepts the full .p8 file, the same flattened onto one line (newlines lost or written as a
+    literal backslash-n), or only the base64 body without the BEGIN/END lines. dbt-snowflake
+    accepts the same secret, so one value works for both.
+    """
+    import base64
+    import binascii
+    import re
+
     from cryptography.hazmat.primitives import serialization
 
-    private_key = serialization.load_pem_private_key(
-        os.environ["SNOWFLAKE_PRIVATE_KEY"].encode(), password=None
-    ).private_bytes(
+    text = text.strip().replace("\\n", "\n")
+    if "PUBLIC KEY-----" in text:
+        raise ValueError("SNOWFLAKE_PRIVATE_KEY holds a public key; use the contents of the .p8 file")
+    if "ENCRYPTED" in text:
+        raise ValueError("SNOWFLAKE_PRIVATE_KEY is encrypted; generate the key with -nocrypt")
+    match = re.fullmatch(r"-----BEGIN ([A-Z ]+)-----(.*)-----END \1-----", text, flags=re.DOTALL)
+    body = match.group(2) if match else text
+    try:
+        der = base64.b64decode("".join(body.split()), validate=True)
+        key = serialization.load_der_private_key(der, password=None)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError(
+            "SNOWFLAKE_PRIVATE_KEY is not a readable private key; paste the full contents of the .p8 file"
+        ) from error
+    return key.private_bytes(
         encoding=serialization.Encoding.DER,
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     )
+
+
+def connect():
+    import snowflake.connector
+
+    private_key = private_key_der(os.environ["SNOWFLAKE_PRIVATE_KEY"])
     return snowflake.connector.connect(
         account=os.environ["SNOWFLAKE_ACCOUNT"],
         user=os.environ.get("SNOWFLAKE_USER", "svc_loader"),
