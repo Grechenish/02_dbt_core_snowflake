@@ -5,7 +5,7 @@ Three workflows in `.github/workflows`:
 | Workflow | Runs on | Does |
 |---|---|---|
 | `ci.yml` | every pull request, every push to `main` | static checks; on pull requests also a dbt build on Snowflake |
-| `ci-cleanup.yml` | a pull request closing (merged or not) | drops that pull request's CI schemas |
+| `ci-cleanup.yml` | a pull request closing (merged or not, even with conflicts) | drops that pull request's CI schemas |
 | `dbt-daily.yml` | 07:00 UTC daily, every merge that touches the pipeline, manual | production: load, freshness, build, docs |
 
 ## Environments
@@ -31,19 +31,31 @@ as-is (`MARTS`); anywhere else every model goes into the target's own schema (`C
 2. **Fetch the production manifest.** The daily workflow uploads `manifest.json` after every
    successful production build as the `prod-manifest` artifact. CI downloads the newest one with
    the `gh` CLI. If there is none yet, CI builds the whole project instead.
-3. **Clone changed incremental models** (`dbt clone --select "state:modified+,config.materialized:incremental"`).
+3. **Clone changed incremental models** (`dbt clone --full-refresh --select "state:modified+,config.materialized:incremental"`).
    Without this, a changed incremental model would be built from scratch in the empty CI schema,
    and its incremental branch, the part most likely to be wrong, would never run in CI.
-4. **Build** (`dbt build --select state:modified+ --defer --state prod-state`).
+   `--full-refresh` re-clones on every push; otherwise a table an earlier push left in the CI
+   schema would be kept.
+4. **Build** (`dbt build --select state:modified+ --defer --favor-state --state prod-state`).
    `state:modified+` is every model whose code or config differs from production, plus
    everything downstream of it. `--defer` makes `ref()` to an unselected, unchanged parent point
-   at the production table instead of a CI table that doesn't exist. Tests and unit tests of
-   the selected models run in the same command.
+   at the production table. `--favor-state` does so even when an earlier push left an older copy
+   of that parent in the CI schema (unit-test fixtures still take their columns from such a copy). Tests and unit tests of the selected models run in the same
+   command.
+
+   A pull request that changes the columns of an incremental model needs the **`full-refresh`**
+   label. The cloned table has production's columns, and `on_schema_change='fail'` stops the
+   incremental run. With the label, CI skips the clone and rebuilds those models from scratch.
+   CI reads the labels when it runs, so after adding the label use **Re-run all jobs**. After merging, run the production full refresh in
+   [RUNBOOK.md](RUNBOOK.md).
 5. **Summary and artifacts.** The job summary lists every test that warned or failed; the run
    results are uploaded.
 6. **Cleanup.** When the pull request closes, `ci-cleanup.yml` runs
    `dbt run-operation drop_ci_schemas` for `CI_PR_<N>`. The macro refuses to run outside the
-   `ci` target or for a prefix that doesn't start with `CI_PR_`.
+   `ci` target or for a prefix that doesn't start with `CI_PR_`. It shares the pull request's
+   concurrency group, so closing cancels a CI build still running before the drop. It uses
+   `pull_request_target`, which also runs when the pull request has conflicts, and checks out
+   `main`, never the pull request's code.
 
 Why parsing alone isn't enough: `dbt parse` proves the Jinja renders and the graph is valid. It
 can't find a misspelt column, a join that duplicates rows, a type error, a failing test or a
@@ -86,7 +98,11 @@ A failed run turns the workflow red, and GitHub emails the repository owner.
 
 ## Not covered
 
-- Pull requests from forks get only the static checks (GitHub doesn't give them secrets).
+- Pull requests from forks and from Dependabot get only the static checks: GitHub gives forks no
+  secrets, and Dependabot only its own Dependabot secrets. Dependabot only bumps GitHub Actions
+  versions, which the static checks and the next production run exercise.
+- `state:modified` ignores `vars`, so a change to `report_currencies` alone selects nothing.
+  Such a pull request needs a production full refresh after merging; see [RUNBOOK.md](RUNBOOK.md).
 - CI can't test loader changes against Snowflake: it has no write access to RAW, by design.
   Loader logic is covered by `pytest` with a fake connection.
 - There is no automatic rollback; see [RUNBOOK.md](RUNBOOK.md).

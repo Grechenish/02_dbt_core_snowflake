@@ -183,7 +183,8 @@ production so their incremental branch is what gets tested.
 what changed keeps CI to the cost of the change.
 **Trade-offs.** CI reads production data, which is fine for public and synthetic data but would
 need masking for sensitive data. CI depends on the last production manifest artifact (falls back
-to a full build if there is none).
+to a full build if there is none). A pull request that changes an incremental model's columns
+can't run the incremental branch against production's table, so it needs the `full-refresh` label.
 
 ## 16. Service users
 

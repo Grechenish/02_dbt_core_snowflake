@@ -57,13 +57,18 @@ jobs:
   snowflake-build:
     name: dbt build on Snowflake
     needs: static-checks
-    # Secrets aren't available to pull requests from forks, so those only get the static checks.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # Secrets aren't available to pull requests from forks, or to Dependabot's (they get only
+    # Dependabot secrets), so those only get the static checks. Dependabot only bumps actions.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
-      actions: read   # to download the production manifest from the daily workflow
+      actions: read         # to download the production manifest from the daily workflow
+      pull-requests: read   # to read the pull request's labels
     env:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
       SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_CI_PRIVATE_KEY }}
@@ -102,9 +107,27 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # The full-refresh label rebuilds the changed incremental models from scratch. A PR that
+      # changes their columns needs it: on_schema_change='fail' stops an incremental run on a
+      # table with the old columns. Production then needs the same (docs/RUNBOOK.md). The labels
+      # are read live, not from the event, so "Re-run all jobs" after adding the label picks it up.
+      - name: Check for the full-refresh label
+        id: labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          labels=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(",")')
+          if [[ ",$labels," == *",full-refresh,"* ]]; then
+            echo "full_refresh=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "full_refresh=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: dbt build (changed models and their children)
         env:
           STATE_FOUND: ${{ steps.state.outputs.found }}
+          FULL_REFRESH: ${{ steps.labels.outputs.full_refresh }}
         run: |
           mkdir -p artifacts && chmod 777 artifacts   # the container runs as a non-root user
           run_dbt() {
@@ -112,20 +135,34 @@ jobs:
               -v "$PWD/prod-state:/app/prod-state:ro" -v "$PWD/artifacts:/app/trading_pnl/target" \
               trading-pnl "$@"
           }
+          refresh=()
+          [ "$FULL_REFRESH" = "true" ] && refresh=(--full-refresh)
           if [ "$STATE_FOUND" = "true" ]; then
-            # Changed incremental models start from a zero-copy clone of production, so their
-            # incremental branch (not a full rebuild) is what gets tested, against real data.
-            run_dbt clone --target ci --state /app/prod-state \
-              --select "state:modified+,config.materialized:incremental"
-            # Build what changed plus everything downstream. Unchanged parents are read from
-            # production (--defer) instead of being rebuilt in the CI schema.
-            run_dbt build --target ci --state /app/prod-state --defer --select "state:modified+"
+            if [ "$FULL_REFRESH" != "true" ]; then
+              # Changed incremental models start from a zero-copy clone of production, so their
+              # incremental branch (not a full rebuild) is what gets tested, against real data.
+              # --full-refresh re-clones on every run: without it, a table left in the CI schema
+              # by an earlier run is kept.
+              run_dbt clone --full-refresh --target ci --state /app/prod-state \
+                --select "state:modified+,config.materialized:incremental"
+            else
+              # Unit tests read their `this` fixture's columns from the existing table, so create
+              # the changed incremental tables, empty and with their new columns, first.
+              run_dbt run --target ci --state /app/prod-state --defer --favor-state --full-refresh --empty \
+                --select "state:modified+,config.materialized:incremental"
+            fi
+            # Build what changed plus everything downstream. Models read unchanged parents from
+            # production (--defer); --favor-state does so even when an earlier run of this PR left
+            # an older copy of them in the CI schema. (Unit-test fixtures still take their columns
+            # from such a copy.)
+            run_dbt build --target ci --state /app/prod-state --defer --favor-state \
+              --select "state:modified+" "${refresh[@]}"
           else
             # Unit tests of an incremental model's incremental branch read the existing table's
             # columns, so create the incremental tables (empty, with their parents) before the
             # first full build.
-            run_dbt run --target ci --select +config.materialized:incremental --empty
-            run_dbt build --target ci
+            run_dbt run --target ci --select +config.materialized:incremental --empty "${refresh[@]}"
+            run_dbt build --target ci "${refresh[@]}"
           fi
 
       - name: Summarize run
