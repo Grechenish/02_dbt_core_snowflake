@@ -11,6 +11,20 @@ models:
       Shared trading calendar: one row per calendar day from var('start_date') to the newest
       market-data day. A day is a trading day when the market data has prices for it. Every
       position and price series in the project uses these trading days.
+    # Whole-row expressions are model-level tests: on a column, expression_is_true prefixes the
+    # expression with the column name, which only suits expressions like ">= 0".
+    data_tests:
+      # BLOCK: a weekend "trading day" would mean the source has rows on non-trading days and
+      # the calendar can't be trusted
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "not (is_trading_day and is_weekend)"
+      # WARN: a trading day with few prices is probably a partial delivery
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "tickers_priced = 0 or tickers_priced >= 1000"
+          config:
+            severity: warn
     columns:
       - name: date_day
         description: Calendar day.
@@ -25,23 +39,10 @@ models:
         description: Saturday or Sunday.
       - name: is_trading_day
         description: True when the market data has prices for the day.
-        data_tests:
-          # BLOCK: a weekend "trading day" would mean the source has rows on non-trading days and
-          # the calendar can't be trusted
-          - dbt_utils.expression_is_true:
-              arguments:
-                expression: "not (is_trading_day and is_weekend)"
       - name: tickers_priced
         description: >
           Number of tickers with a close price on the day. A real trading day has thousands; a
           handful means a partial or stray day in the source.
-        data_tests:
-          # WARN: a trading day with few prices is probably a partial delivery
-          - dbt_utils.expression_is_true:
-              arguments:
-                expression: "tickers_priced = 0 or tickers_priced >= 1000"
-              config:
-                severity: warn
 
   - name: dim_security
     description: One row per ticker in the market data, with its latest asset class and listing exchange.
