@@ -152,9 +152,11 @@ rollbacks) is covered in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Limitations
 
-- **Verified on Snowflake by one production run so far** (2 Oct 2026: loader, freshness, and
-  every model and data test). The pull-request CI build on Snowflake and the remaining unit
-  tests haven't passed there yet. The performance numbers come from the earlier version.
+- **Verified on Snowflake on 2 Oct 2026** by one production run (loader, freshness, every model
+  and data test) and one pull-request build (all models, data tests and unit tests in a CI
+  schema). Not run there yet: a production run on top of existing data, the CI path that defers
+  to production (it needs a production manifest from `main`), and the CI schema cleanup. The
+  performance numbers come from the earlier version.
 - Trades are synthetic and few; prices in them are illustrative.
 - The free market data lags about 90 days, so recent trades wait for prices
   (`assert_trades_within_market_data` lists them).
