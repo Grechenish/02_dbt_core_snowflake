@@ -174,3 +174,40 @@ def test_bad_header_stops_the_run_before_connecting(tmp_path, monkeypatch):
     write_trade_file(tmp_path, "trades_2025-01-01.csv", header=["trade_id", "qty"])
     monkeypatch.setattr(load_trades, "connect", lambda: pytest.fail("must not connect"))
     assert load_trades.main(["--data-dir", str(tmp_path)]) == 1
+
+
+# --- private key secret ---------------------------------------------------------------------
+
+def _pem_pair():
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode()
+    public_pem = key.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    return private_pem, public_pem
+
+
+def test_private_key_is_read_however_the_secret_was_pasted():
+    private_pem, _ = _pem_pair()
+    expected = load_trades.private_key_der(private_pem)
+    lines = private_pem.strip().splitlines()
+    pasted = [
+        private_pem,                       # the .p8 file as is
+        " ".join(lines),                   # newlines lost: one line, spaces
+        "\\n".join(lines),                 # newlines written as a literal \n
+        "".join(lines[1:-1]),              # only the base64 body
+    ]
+    assert all(load_trades.private_key_der(value) == expected for value in pasted)
+
+
+def test_public_key_or_garbage_in_the_secret_gives_a_clear_error():
+    _, public_pem = _pem_pair()
+    with pytest.raises(ValueError, match="public key"):
+        load_trades.private_key_der(public_pem)
+    with pytest.raises(ValueError, match="full contents of the .p8 file"):
+        load_trades.private_key_der("not a key")
