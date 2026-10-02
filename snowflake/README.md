@@ -9,7 +9,7 @@ order in a Snowsight worksheet; re-running any of them is safe and resets drifte
 | `02_databases.sql` | SYSADMIN | `RAW` (permanent), `ANALYTICS` (production), `ANALYTICS_DEV` (transient), the trade stage, file format and raw tables |
 | `03_roles_and_grants.sql` | SECURITYADMIN, ACCOUNTADMIN | 5 roles and their privileges |
 | `04_users.sql` | SECURITYADMIN | 3 service users, one role each |
-| `05_credentials.sql` | SECURITYADMIN | **edit first**: public keys for the service users, roles for people |
+| `05_credentials.sql` | SECURITYADMIN, ACCOUNTADMIN | **edit first**: public keys for the service users, roles for people |
 
 Before running them, install the free **Snowflake Public Data (Free)** listing from the
 Marketplace (it creates the database `SNOWFLAKE_PUBLIC_DATA_FREE`).
