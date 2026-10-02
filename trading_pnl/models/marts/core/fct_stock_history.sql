@@ -23,8 +23,13 @@ with prices as (
         close_price is not null
         {% if is_incremental() %}
             -- same window as int_stock_prices_daily, so every day it re-merged is re-converted here too
+            -- coalesce: an existing but empty table (e.g. created by `dbt run --empty`) is loaded in full
             and trade_date >= (
-                select dateadd(day, -{{ var('market_data_lookback_days') }}, max(stored.trade_date))
+                select
+                    coalesce(
+                        dateadd(day, -{{ var('market_data_lookback_days') }}, max(stored.trade_date)),
+                        '1900-01-01'::date
+                    )
                 from {{ this }} as stored
             )
         {% endif %}
