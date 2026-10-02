@@ -18,6 +18,9 @@ alter user svc_dbt_prod set rsa_public_key = '<svc_dbt_prod public key>';
 alter user svc_dbt_ci   set rsa_public_key = '<svc_dbt_ci public key>';
 
 -- People keep their own user and their own login (SSO or password + MFA). They get roles, never
--- the service users' keys.
+-- the service users' keys. The user created when the account was opened is owned by ACCOUNTADMIN,
+-- and SECURITYADMIN can't see it ("User ... does not exist or not authorized"), so grant to people
+-- as ACCOUNTADMIN. Find your user name with: select current_user();
+use role accountadmin;
 grant role developer to user <your_snowflake_user>;
 -- grant role reporter to user <analyst_user>;
