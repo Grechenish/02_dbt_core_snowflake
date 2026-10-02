@@ -132,9 +132,11 @@ jobs:
           path: site
 
   # Requires Settings > Pages > Source: "GitHub Actions".
+  # The github-pages environment only accepts deployments from the default branch, so a run
+  # started by hand on another branch builds the docs but doesn't publish them.
   deploy-docs:
     needs: dbt-build
-    if: ${{ !cancelled() && needs.dbt-build.outputs.docs_uploaded == 'success' }}
+    if: ${{ !cancelled() && needs.dbt-build.outputs.docs_uploaded == 'success' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
