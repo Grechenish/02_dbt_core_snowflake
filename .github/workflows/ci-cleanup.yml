@@ -2,16 +2,27 @@ name: ci cleanup
 
 # Drops a pull request's CI schemas (ANALYTICS_DEV.CI_PR_<number>) once it is merged or closed.
 # They stay up while the pull request is open, so reviewers can query what CI built.
+# pull_request_target, unlike pull_request, also runs for a pull request closed with merge
+# conflicts. It runs this workflow as it is on main and checks out main, never the PR's code.
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
 
 permissions:
   contents: read
 
+# Same group as the pull request's ci run: closing cancels a build still running, so it can't
+# recreate the schema after the drop.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   drop-ci-schemas:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Same condition as ci.yml's Snowflake build: no schema was created for other pull requests.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
