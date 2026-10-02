@@ -9,7 +9,7 @@ went red tells you where.
 
 | Failed step | Usual cause | What to do |
 |---|---|---|
-| Load trade files | a malformed file (`COPY` aborts and loads nothing from that run), missing or rotated key | Check `RAW.TRADES.LOAD_RUNS` (below). Fix or replace the file **under a new name**, then rerun. |
+| Load trade files | a file `COPY` can't read (it aborts and loads nothing from that run), missing or rotated key | Check `RAW.TRADES.LOAD_RUNS` (below). A failed file stays on the stage and would abort every later run, so first remove it (below), then add the fixed file **under a new name** and rerun. |
 | Check source freshness | the Marketplace feed stopped, or no successful load in ~3 days | Check the listing in Snowsight; nothing is rebuilt until the source recovers, so yesterday's marts stay as they were. |
 | dbt build: a blocking test | real bad data or a bug | Read the failing test's SQL and description; it says what it protects. Downstream models were skipped. |
 | dbt build: a model | SQL error, privilege error, statement timeout | The error is in the log; a timeout means a runaway query (10-minute limit). |
@@ -26,13 +26,27 @@ select f.value:file::varchar as file, f.value:status::varchar as status,
        f.value:rows_loaded::number as rows_loaded, f.value:first_error::varchar as first_error
 from raw.trades.load_runs, lateral flatten(input => copy_results) f
 where run_id = '<run id>';
+
+-- Remove a file that failed to load from the stage (as LOADER or SYSADMIN).
+-- `list @raw.trades.trade_files;` shows the staged names.
+remove @raw.trades.trade_files/<file name>.csv.gz;
+```
+
+The loader refuses a file before staging it if its header differs or any row has the wrong number
+of fields. If a bad row still reached RAW (the loader can only insert), delete it as SYSADMIN
+before resending the corrected file, or staging keeps the first version and
+`assert_trade_replays_are_identical` fails:
+
+```sql
+delete from raw.trades.trades where _load_run_id = '<run id>' and _source_file = '<file name>.csv.gz';
 ```
 
 ## Rerunning
 
 Every step is safe to repeat, so a rerun is just **Re-run all jobs** (or **Run workflow**):
 the loader skips files already loaded, models are rebuilt from RAW and the source, and
-incremental models re-merge their window.
+incremental models re-merge their window. The exception is a file that failed `COPY`: it stays on
+the stage and fails every rerun until it is removed (above).
 
 ## Stale data
 
@@ -49,7 +63,8 @@ incremental models re-merge their window.
 
 Needed when `assert_market_data_restatements_within_lookback` warns (the provider changed days
 older than the window), after changing `start_date` or `report_currencies`, or when a column
-change makes the incremental models fail with `on_schema_change`.
+change makes the incremental models fail with `on_schema_change`. In CI, a pull request that
+changes those columns needs the `full-refresh` label ([CI_CD.md](CI_CD.md)).
 
 **Actions → dbt daily build → Run workflow → full_refresh: true.** This rebuilds every
 incremental model from all history (seconds on XSMALL at the current size).

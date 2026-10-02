@@ -16,8 +16,9 @@ create database if not exists analytics comment = 'Production dbt models. Writte
 create transient database if not exists analytics_dev data_retention_time_in_days = 0
     comment = 'Developer and CI dbt builds. Disposable.';
 
--- How the trade CSVs are parsed. ERROR_ON_COLUMN_COUNT_MISMATCH makes a malformed file fail the
--- COPY instead of loading shifted columns.
+-- How the trade CSVs are parsed. ERROR_ON_COLUMN_COUNT_MISMATCH only applies to a plain COPY: the
+-- loader's COPY selects columns from the stage, where Snowflake ignores it, so the loader checks
+-- every row's field count itself before staging a file.
 create file format if not exists raw.trades.trade_csv
     type = csv
     skip_header = 1

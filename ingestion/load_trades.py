@@ -4,7 +4,8 @@
     python ingestion/load_trades.py --dry-run    # only check the files; no Snowflake connection
 
 Each run:
-  1. finds data/trades/trades_*.csv and checks every file has the expected header;
+  1. finds data/trades/trades_*.csv and checks every file has the expected header, and every row
+     the same number of fields;
   2. PUTs them into the internal stage RAW.TRADES.TRADE_FILES (a file already there is skipped);
   3. runs one COPY INTO that loads every staged file Snowflake hasn't loaded before, adding the
      source file name, row number, file timestamp and this run's id to every row;
@@ -46,8 +47,9 @@ STAGE = "raw.trades.trade_files"
 RAW_TABLE = "raw.trades.trades"
 LOAD_RUNS_TABLE = "raw.trades.load_runs"
 
-# COPY reads the CSV columns positionally ($1..$12), so the header check above is what guarantees
-# they line up with these column names.
+# COPY reads the CSV columns positionally ($1..$12), so check_file is what guarantees they line up
+# with these column names. Snowflake ignores the file format's ERROR_ON_COLUMN_COUNT_MISMATCH when
+# COPY loads from a query like this one, so a row with a stray comma would load shifted columns.
 COPY_SQL = """
 copy into {table} (
     {columns},
@@ -98,21 +100,30 @@ def discover_files(data_dir: Path) -> list[Path]:
     return sorted(data_dir.glob(FILE_GLOB))
 
 
-def check_header(path: Path) -> None:
-    """Refuse a file whose columns aren't exactly the expected ones, in order.
+def check_file(path: Path) -> None:
+    """Refuse a file whose columns aren't exactly the expected ones, in order, or with a row that
+    has a different number of fields.
 
-    COPY maps columns by position, so a reordered or renamed column would otherwise load
-    silently into the wrong place.
+    COPY maps columns by position, so a reordered or renamed column, or a row with an unquoted
+    comma or a missing field, would otherwise load silently into the wrong place. RAW is
+    append-only for the loader, so a bad row is far easier to stop here than to remove later.
     """
     with path.open(newline="", encoding="utf-8") as handle:
-        header = next(csv.reader(handle), None)
-    if header is None:
-        raise FileCheckError(f"{path.name}: file is empty")
-    header = [column.strip().lower() for column in header]
-    if header != EXPECTED_HEADER:
-        raise FileCheckError(
-            f"{path.name}: expected columns {EXPECTED_HEADER}, found {header}"
-        )
+        reader = csv.reader(handle)
+        header = next(reader, None)
+        if header is None:
+            raise FileCheckError(f"{path.name}: file is empty")
+        header = [column.strip().lower() for column in header]
+        if header != EXPECTED_HEADER:
+            raise FileCheckError(
+                f"{path.name}: expected columns {EXPECTED_HEADER}, found {header}"
+            )
+        for row in reader:
+            if len(row) != len(EXPECTED_HEADER):
+                raise FileCheckError(
+                    f"{path.name}: line {reader.line_num} has {len(row)} fields, "
+                    f"expected {len(EXPECTED_HEADER)}"
+                )
 
 
 def build_copy_sql(run_id: str) -> str:
@@ -259,11 +270,11 @@ def main(argv: list[str] | None = None) -> int:
     files = discover_files(args.data_dir)
     try:
         for path in files:
-            check_header(path)
+            check_file(path)
     except FileCheckError as error:
         print(f"Refusing to load: {error}", file=sys.stderr)
         return 1
-    print(f"{len(files)} trade files found in {args.data_dir}, all with the expected header.")
+    print(f"{len(files)} trade files found in {args.data_dir}, all with the expected columns.")
 
     if args.dry_run:
         for path in files:
