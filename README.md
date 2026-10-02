@@ -152,10 +152,9 @@ rollbacks) is covered in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Limitations
 
-- **Not yet run on Snowflake since the redesign.** Static checks (lint, `dbt parse`, loader tests,
-  Docker build) pass in CI; the Snowflake CI job and the daily build need the account set up per
-  [docs/CI_CD.md](docs/CI_CD.md#setting-it-up). The performance numbers come from the earlier
-  version.
+- **Verified on Snowflake by one production run so far** (2 Oct 2026: loader, freshness, and
+  every model and data test). The pull-request CI build on Snowflake and the remaining unit
+  tests haven't passed there yet. The performance numbers come from the earlier version.
 - Trades are synthetic and few; prices in them are illustrative.
 - The free market data lags about 90 days, so recent trades wait for prices
   (`assert_trades_within_market_data` lists them).
