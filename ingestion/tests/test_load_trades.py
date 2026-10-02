@@ -80,11 +80,11 @@ def write_trade_file(directory: Path, name: str, header=None) -> Path:
     return path
 
 
-def test_repository_trade_files_all_pass_the_header_check():
+def test_repository_trade_files_all_pass_the_file_check():
     files = load_trades.discover_files(REPO_DATA_DIR)
     assert files, "no trade files found"
     for path in files:
-        load_trades.check_header(path)
+        load_trades.check_file(path)
 
 
 def test_discovery_only_picks_trade_files_in_date_order(tmp_path):
@@ -99,7 +99,30 @@ def test_header_with_reordered_columns_is_refused(tmp_path):
     header[7], header[8] = header[8], header[7]  # price before quantity would load prices as quantities
     path = write_trade_file(tmp_path, "trades_2025-01-01.csv", header=header)
     with pytest.raises(load_trades.FileCheckError):
-        load_trades.check_header(path)
+        load_trades.check_file(path)
+
+
+@pytest.mark.parametrize(
+    "bad_line",
+    [
+        "T-2,1,NEW,Book1,Smith, J.,AAPL,BUY,10,100,GBP,2025-01-15,2025-01-15T10:00:00Z",  # unquoted comma
+        "T-2,1,NEW,Book1,A,AAPL,BUY,10,100,GBP,2025-01-15",  # missing field
+    ],
+)
+def test_row_with_wrong_field_count_is_refused(tmp_path, bad_line):
+    # COPY from a query ignores ERROR_ON_COLUMN_COUNT_MISMATCH, so this would load shifted columns.
+    path = write_trade_file(tmp_path, "trades_2025-01-01.csv")
+    with path.open("a") as handle:
+        handle.write(bad_line + "\n")
+    with pytest.raises(load_trades.FileCheckError, match="line 3 has"):
+        load_trades.check_file(path)
+
+
+def test_quoted_comma_is_one_field(tmp_path):
+    path = write_trade_file(tmp_path, "trades_2025-01-01.csv")
+    with path.open("a") as handle:
+        handle.write('T-2,1,NEW,Book1,"Smith, J.",AAPL,BUY,10,100,GBP,2025-01-15,2025-01-15T10:00:00Z\n')
+    load_trades.check_file(path)
 
 
 def test_copy_sql_captures_load_metadata_and_aborts_on_error():
@@ -155,13 +178,13 @@ def test_resent_file_under_a_new_name_is_loaded_again(tmp_path):
 
 def test_failed_copy_is_recorded_and_raised(tmp_path):
     files = [write_trade_file(tmp_path, "trades_2025-01-01.csv")]
-    snowflake = FakeSnowflake(copy_error="Number of columns in file (11) does not match")
+    snowflake = FakeSnowflake(copy_error="Invalid UTF8 detected in string '0xFF'")
 
     with pytest.raises(RuntimeError):
         load_trades.load(snowflake, files)
 
     [run] = snowflake.recorded_runs()
-    assert run[2] == "FAILED" and "does not match" in run[7]
+    assert run[2] == "FAILED" and "Invalid UTF8" in run[7]
 
 
 def test_dry_run_checks_files_without_connecting(tmp_path, monkeypatch):
