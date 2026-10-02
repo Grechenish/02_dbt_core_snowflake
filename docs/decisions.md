@@ -165,7 +165,7 @@ helps; a bigger warehouse just paid more for the same single worker.
 **Problem.** Development, CI and production must not overwrite each other.
 **Chosen.** `ANALYTICS` (production, only `transformer_prod` writes) and `ANALYTICS_DEV`
 (transient; developers and CI). dbt's `generate_schema_name_for_env` builds `MARTS` in
-production and `<target schema>_MARTS` elsewhere.
+production and puts everything in the target's own schema elsewhere (`DEV_VIKTOR`, `CI_PR_12`).
 **Why.** Separate databases make the boundary a permission, not a convention: the CI and
 developer roles have no write privilege on `ANALYTICS` at all.
 **Trade-offs.** One Snowflake account for everything; a mistake in the grants script affects all
@@ -175,7 +175,7 @@ environments.
 
 **Problem.** CI needs to build somewhere real without colliding with other pull requests or
 production.
-**Chosen.** `ANALYTICS_DEV.CI_PR_<number>_*`, dropped by `ci-cleanup.yml` when the pull request
+**Chosen.** `ANALYTICS_DEV.CI_PR_<number>`, dropped by `ci-cleanup.yml` when the pull request
 closes. Only changed models and their children are built (`state:modified+`); unchanged parents
 are read from production (`--defer`); changed incremental models start from a zero-copy clone of
 production so their incremental branch is what gets tested.

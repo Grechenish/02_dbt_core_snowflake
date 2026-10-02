@@ -11,7 +11,7 @@ create schema if not exists raw.trades;
 -- Marketplace share, so dbt's default transient tables are fine here.
 create database if not exists analytics comment = 'Production dbt models. Written only by transformer_prod.';
 
--- ANALYTICS_DEV: one schema set per developer (DEV_<NAME>_*) and per pull request (CI_PR_<N>_*).
+-- ANALYTICS_DEV: one schema per developer (DEV_<NAME>) and per pull request (CI_PR_<N>).
 -- Transient database: no Fail-safe storage is paid for throwaway builds, and no Time Travel is kept.
 create transient database if not exists analytics_dev data_retention_time_in_days = 0
     comment = 'Developer and CI dbt builds. Disposable.';
