@@ -121,8 +121,10 @@ on `(ticker, trade_date)`, re-reading the last `market_data_lookback_days` days.
 **Why.** The grain is a natural key; a day's prices don't depend on other days, so reprocessing a
 window is correct; and the saving is real (a window instead of all history).
 **Trade-offs.** Restatements older than the window are missed (detected by a test, repaired with
-`--full-refresh`); rows deleted at the source are never deleted here; schema changes need a full
-refresh (`on_schema_change = 'fail'` makes that explicit instead of silently appending columns).
+`--full-refresh`); rows deleted at the source are never deleted from `int_stock_prices_daily`
+(only a day that loses its close inside the window also leaves `fct_stock_history`, through a
+post-hook); schema changes need a full refresh (`on_schema_change = 'fail'` makes that explicit
+instead of silently appending columns).
 Adjusted prices were dropped: the provider rewrites them for the whole history on every split or
 dividend, so they can't be maintained by any lookback window.
 

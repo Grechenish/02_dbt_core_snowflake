@@ -12,15 +12,19 @@ source_prices as (
     select
         ticker,
         trade_date,
+        max(case when variable = 'pre-market_open' then value end)    as open_price,
+        max(case when variable = 'all-day_high' then value end)       as high_price,
+        max(case when variable = 'all-day_low' then value end)        as low_price,
         max(case when variable = 'post-market_close' then value end)  as close_price,
         max(case when variable = 'nasdaq_volume' then value end)::number(38, 0)  as volume
     from {{ ref('stg_public_data__stock_prices') }}
-    where trade_date >= (select first_day from window_start)
+    -- Only days already loaded: a day the source has published since is new data, not a restatement.
+    where trade_date between (select first_day from window_start) and (select last_day from window_start)
     group by ticker, trade_date
 ),
 
 stored_prices as (
-    select ticker, trade_date, close_price, volume
+    select ticker, trade_date, open_price, high_price, low_price, close_price, volume
     from {{ ref('int_stock_prices_daily') }}
     where trade_date >= (select first_day from window_start)
 )
@@ -38,6 +42,12 @@ select
         when source_prices.ticker is null then 'missing_in_source'
         else 'value_changed'
     end                                                            as difference,
+    stored_prices.open_price   as stored_open_price,
+    source_prices.open_price   as source_open_price,
+    stored_prices.high_price   as stored_high_price,
+    source_prices.high_price   as source_high_price,
+    stored_prices.low_price    as stored_low_price,
+    source_prices.low_price    as source_low_price,
     stored_prices.close_price  as stored_close_price,
     source_prices.close_price  as source_close_price,
     stored_prices.volume       as stored_volume,
@@ -46,6 +56,10 @@ from source_prices
 full outer join stored_prices
     on  stored_prices.ticker = source_prices.ticker
     and stored_prices.trade_date = source_prices.trade_date
-where not equal_null(stored_prices.close_price, source_prices.close_price)
+-- every price the marts publish (fct_stock_history carries open, high and low too)
+where not equal_null(stored_prices.open_price, source_prices.open_price)
+   or not equal_null(stored_prices.high_price, source_prices.high_price)
+   or not equal_null(stored_prices.low_price, source_prices.low_price)
+   or not equal_null(stored_prices.close_price, source_prices.close_price)
    or not equal_null(stored_prices.volume, source_prices.volume)
 {% endmacro %}
