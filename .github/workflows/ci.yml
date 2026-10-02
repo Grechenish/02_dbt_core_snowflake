@@ -121,6 +121,9 @@ jobs:
             # production (--defer) instead of being rebuilt in the CI schema.
             run_dbt build --target ci --state /app/prod-state --defer --select "state:modified+"
           else
+            # Unit tests of an incremental model's incremental branch read the existing table's
+            # columns, so create the incremental tables (empty) before the first full build.
+            run_dbt run --target ci --select config.materialized:incremental --empty
             run_dbt build --target ci
           fi
 

@@ -68,10 +68,21 @@ jobs:
       - name: Measure market-data restatements (observe only)
         continue-on-error: true
         run: |
-          docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
-            -v "$PWD/artifacts/observe:/app/trading_pnl/target" \
-            trading-pnl show --target prod --select market_data_restatement_depth --limit 50
+          set -o pipefail
+          if ! docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
+                 -v "$PWD/artifacts/observe:/app/trading_pnl/target" \
+                 trading-pnl show --target prod --select market_data_restatement_depth --limit 50 \
+                 2>&1 | tee restatements.log; then
+            # Before the first successful build there is nothing stored to compare with.
+            if grep -q "does not exist or not authorized" restatements.log; then
+              echo "::notice::No stored market data yet (first production run): nothing to compare."
+              exit 0
+            fi
+            exit 1
+          fi
 
+      # Unit tests check code, so they run in CI on every pull request. They're left out here: an
+      # incremental model's unit test needs its table to exist, which it doesn't on a first run.
       - name: dbt build
         env:
           FULL_REFRESH: ${{ inputs.full_refresh }}   # empty on scheduled and push runs
@@ -80,7 +91,7 @@ jobs:
           if [ "$FULL_REFRESH" = "true" ]; then extra_args="--full-refresh"; fi
           docker run --rm -e SNOWFLAKE_ACCOUNT -e SNOWFLAKE_PRIVATE_KEY \
             -v "$PWD/artifacts:/app/trading_pnl/target" \
-            trading-pnl build --target prod $extra_args
+            trading-pnl build --target prod --exclude-resource-type unit_test $extra_args
 
       - name: Summarize run
         if: always()

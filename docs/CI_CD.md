@@ -56,8 +56,8 @@ privilege problem. Those only show up when Snowflake runs the SQL.
    stopped updating or the loader hasn't succeeded recently.
 3. **Measure restatements** (observe only, never fails the run): logs how far back the market data
    changed since the last run. This must run before the build overwrites the evidence.
-4. **`dbt build --target prod`**: models, tests and unit tests in dependency order. A failing
-   blocking test skips everything downstream of it.
+4. **`dbt build --target prod`**: models and data tests in dependency order. A failing blocking
+   test skips everything downstream of it. Unit tests check code, so they run in CI, not here.
 5. **Job summary, manifest and run results** are uploaded; the manifest becomes CI's comparison
    point.
 6. **dbt docs** are generated and deployed to GitHub Pages.
