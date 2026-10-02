@@ -3,11 +3,34 @@
         materialized='incremental',
         incremental_strategy='merge',
         unique_key=['ticker', 'trade_date'],
-        on_schema_change='fail'
+        on_schema_change='fail',
+        post_hook="
+            delete from {{ this }}
+            using (
+                select history.ticker, history.trade_date
+                from {{ this }} as history
+                left join {{ ref('int_stock_prices_daily') }} as prices
+                    on  prices.ticker = history.ticker
+                    and prices.trade_date = history.trade_date
+                    and prices.close_price is not null
+                where
+                    prices.ticker is null
+                    and history.trade_date >= (
+                        select dateadd(day, -2 * {{ var('market_data_lookback_days') }}, max(trade_date))
+                        from {{ this }}
+                    )
+            ) as stale
+            where {{ this.identifier }}.ticker = stale.ticker
+              and {{ this.identifier }}.trade_date = stale.trade_date
+        "
     )
 }}
 
 -- Daily stock history with close prices converted to each report currency.
+-- The post-hook: a merge only updates and inserts. If a restatement removes a day's close in
+-- int_stock_prices_daily, the merge has no row for it, so the stale converted row is deleted after.
+-- It checks twice the lookback window: that covers every day this run re-merged, even when several
+-- new days arrived, and Snowflake can still prune the rest of the table.
 -- FX rates are not published on every trading day (holidays differ between the US and the ECB),
 -- so each trading day takes the most recent rate on or before it.
 --
