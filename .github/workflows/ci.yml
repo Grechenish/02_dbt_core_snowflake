@@ -3,7 +3,7 @@ name: ci
 # Every pull request is checked twice before it can merge:
 #   1. static checks: SQL lint, loader tests, Docker image build and dbt parse. No Snowflake access needed.
 #   2. dbt build on Snowflake: the changed models and everything downstream of them are built and
-#      tested in the pull request's own schemas (ANALYTICS_DEV.CI_PR_<number>_*), reading unchanged
+#      tested in the pull request's own schema (ANALYTICS_DEV.CI_PR_<number>), reading unchanged
 #      models from production. ci-cleanup.yml drops those schemas when the pull request closes.
 on:
   pull_request:
@@ -122,8 +122,9 @@ jobs:
             run_dbt build --target ci --state /app/prod-state --defer --select "state:modified+"
           else
             # Unit tests of an incremental model's incremental branch read the existing table's
-            # columns, so create the incremental tables (empty) before the first full build.
-            run_dbt run --target ci --select config.materialized:incremental --empty
+            # columns, so create the incremental tables (empty, with their parents) before the
+            # first full build.
+            run_dbt run --target ci --select +config.materialized:incremental --empty
             run_dbt build --target ci
           fi
 

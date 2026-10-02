@@ -5,7 +5,7 @@ trading_pnl:
   target: dev
   outputs:
     # A person working locally, logged in as themselves through the browser (SSO, or password + MFA).
-    # Builds into ANALYTICS_DEV under DEV_<USER>_*, so developers never touch each other's tables.
+    # Builds into ANALYTICS_DEV in schema DEV_<USER>, so developers never touch each other's tables.
     dev:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
@@ -17,7 +17,7 @@ trading_pnl:
       schema: "{{ env_var('DBT_SCHEMA', 'DEV_' ~ env_var('SNOWFLAKE_USER') | upper) }}"
       threads: 4
 
-    # Pull-request checks in GitHub Actions. Builds into ANALYTICS_DEV under CI_PR_<number>_*; the
+    # Pull-request checks in GitHub Actions. Builds into ANALYTICS_DEV.CI_PR_<number>; the
     # role has no write access to production at all, only the read access --defer and clone need.
     ci:
       type: snowflake

@@ -1,6 +1,6 @@
 name: ci cleanup
 
-# Drops a pull request's CI schemas (ANALYTICS_DEV.CI_PR_<number>_*) once it is merged or closed.
+# Drops a pull request's CI schemas (ANALYTICS_DEV.CI_PR_<number>) once it is merged or closed.
 # They stay up while the pull request is open, so reviewers can query what CI built.
 on:
   pull_request:

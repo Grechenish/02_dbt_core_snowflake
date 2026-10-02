@@ -115,8 +115,8 @@ Set up by the idempotent scripts in [`snowflake/`](snowflake/README.md):
 |---|---|---|
 | `loader` | `svc_loader` | PUT to the trade stage, insert into `RAW.TRADES` |
 | `transformer_prod` | `svc_dbt_prod` | read RAW and the Marketplace share, build `ANALYTICS` |
-| `transformer_ci` | `svc_dbt_ci` | the same reads plus production, build `ANALYTICS_DEV.CI_PR_*` |
-| `developer` | people | like CI, in `ANALYTICS_DEV.DEV_<name>_*` |
+| `transformer_ci` | `svc_dbt_ci` | the same reads plus production, build `ANALYTICS_DEV.CI_PR_<n>` |
+| `developer` | people | like CI, in `ANALYTICS_DEV.DEV_<name>` |
 | `reporter` | people, BI tools | read the production marts |
 
 Service users are `TYPE = SERVICE` with RSA key-pair authentication; people log in as
@@ -136,7 +136,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env                    # SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER
 set -a && source .env && set +a
 cd trading_pnl && dbt deps
-dbt build                                # builds ANALYTICS_DEV.DEV_<YOU>_*, logs in through the browser
+dbt build                                # builds ANALYTICS_DEV.DEV_<YOU>, logs in through the browser
 ```
 
 **Tests that need no Snowflake:**

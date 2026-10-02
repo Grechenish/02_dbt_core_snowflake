@@ -16,11 +16,11 @@ Three workflows in `.github/workflows`:
 | Snowflake user | your own (browser login) | `svc_dbt_ci` (key pair) | `svc_dbt_prod` (key pair) |
 | Role | `developer` | `transformer_ci` | `transformer_prod` |
 | Warehouse | `dev_wh` | `dev_wh` | `transform_wh` |
-| Builds into | `ANALYTICS_DEV.DEV_<USER>_*` | `ANALYTICS_DEV.CI_PR_<N>_*` | `ANALYTICS.STAGING / INTERMEDIATE / MARTS / SEEDS` |
+| Builds into | `ANALYTICS_DEV.DEV_<USER>` | `ANALYTICS_DEV.CI_PR_<N>` | `ANALYTICS.STAGING / INTERMEDIATE / MARTS / SEEDS` |
 | Can write production | no | no | yes |
 
 Schema names come from `macros/generate_schema_name.sql`: in prod a model's folder schema is used
-as-is (`MARTS`); anywhere else it is prefixed with the target schema (`CI_PR_12_MARTS`).
+as-is (`MARTS`); anywhere else every model goes into the target's own schema (`CI_PR_12`).
 
 ## A pull request, step by step
 
